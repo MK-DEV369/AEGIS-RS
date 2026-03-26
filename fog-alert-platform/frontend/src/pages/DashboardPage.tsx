@@ -1,3 +1,5 @@
+import GradientText from '@/components/GradientText'
+
 const kpis = [
   { label: 'Risk Score', value: '72 / 100' },
   { label: 'Fog Level', value: 'Moderate' },
@@ -8,7 +10,9 @@ const kpis = [
 export function DashboardPage() {
   return (
     <div className="page">
-      <h1 className="page-title">Main Dashboard</h1>
+      <GradientText className="page-title text-4xl font-bold" colors={['#5227FF', '#FF9FFC', '#B19EEF']} animationSpeed={6}>
+        Main Dashboard
+      </GradientText>
 
       <section className="kpi-grid">
         {kpis.map((kpi) => (
@@ -21,7 +25,9 @@ export function DashboardPage() {
 
       <section className="grid dashboard-main">
         <article className="panel glass map-panel">
-          <h3>Interactive Map</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Interactive Map
+          </GradientText>
           <div className="map-canvas">
             <span className="marker marker-red">Hazard</span>
             <span className="marker marker-yellow">Fog Zone</span>
@@ -30,15 +36,21 @@ export function DashboardPage() {
         </article>
 
         <aside className="panel glass insights-panel">
-          <h3>AI Insights Panel</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            AI Insights Panel
+          </GradientText>
           <div className="insight-block">
-            <h4>AI Risk Breakdown</h4>
+            <GradientText className="text-lg font-bold mb-2" colors={['#4b84ff', '#9b59ff']} animationSpeed={10}>
+              AI Risk Breakdown
+            </GradientText>
             <p>Fog: 45%</p>
             <p>Traffic: 30%</p>
             <p>Potholes: 25%</p>
           </div>
           <div className="insight-block">
-            <h4>Model Outputs</h4>
+            <GradientText className="text-lg font-bold mb-2" colors={['#4b84ff', '#9b59ff']} animationSpeed={10}>
+              Model Outputs
+            </GradientText>
             <p>Fog Probability: 0.78</p>
             <p>Detected Objects: Pothole, Sign</p>
             <p>Confidence: 0.92, 0.84</p>
@@ -48,14 +60,18 @@ export function DashboardPage() {
 
       <section className="grid two-col">
         <article className="panel glass chart-card">
-          <h3>Risk Over Time</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Risk Over Time
+          </GradientText>
           <div className="fake-chart">
             <div className="line wave-1" />
           </div>
         </article>
 
         <article className="panel glass chart-card">
-          <h3>Fog Prediction Trend</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Fog Prediction Trend
+          </GradientText>
           <div className="fake-chart">
             <div className="line wave-2" />
           </div>

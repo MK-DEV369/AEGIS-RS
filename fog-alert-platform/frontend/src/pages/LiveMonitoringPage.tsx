@@ -1,16 +1,24 @@
+import GradientText from '@/components/GradientText'
+
 export function LiveMonitoringPage() {
   return (
     <div className="page">
-      <h1 className="page-title">Live Monitoring</h1>
+      <GradientText className="page-title text-4xl font-bold" colors={['#5227FF', '#FF9FFC', '#B19EEF']} animationSpeed={6}>
+        Live Monitoring
+      </GradientText>
 
       <section className="grid dashboard-main">
         <article className="panel glass video-panel">
-          <h3>Live Video Stream</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Live Video Stream
+          </GradientText>
           <div className="video-placeholder pulse-border">Camera Stream Placeholder</div>
         </article>
 
         <aside className="panel glass insights-panel">
-          <h3>Detection Panel</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Detection Panel
+          </GradientText>
           <div className="insight-block">
             <p>Object: Pothole</p>
             <p>Confidence: 92%</p>
@@ -21,12 +29,16 @@ export function LiveMonitoringPage() {
 
       <section className="grid two-col">
         <article className="panel glass">
-          <h3>Before (Foggy)</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Before (Foggy)
+          </GradientText>
           <div className="image-box">Foggy Image</div>
         </article>
 
         <article className="panel glass">
-          <h3>After (Enhanced / Dehazed)</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            After (Enhanced / Dehazed)
+          </GradientText>
           <div className="image-box">Enhanced Image</div>
         </article>
       </section>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import GradientText from '@/components/GradientText'
 
 const layers = ['Fog', 'Potholes', 'Traffic Signs', 'Road Humps', 'Risk Heatmap']
 
@@ -7,11 +8,15 @@ export function LiveMapPage() {
 
   return (
     <div className="page">
-      <h1 className="page-title">Live Map</h1>
+      <GradientText className="page-title text-4xl font-bold" colors={['#5227FF', '#FF9FFC', '#B19EEF']} animationSpeed={6}>
+        Live Map
+      </GradientText>
 
       <section className="panel glass">
         <div className="alert-toolbar">
-          <h3>Map Layers</h3>
+          <GradientText className="text-xl font-bold" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Map Layers
+          </GradientText>
           <button className="action-btn" onClick={() => setFullScreen((prev) => !prev)}>
             {fullScreen ? 'Exit Full-Screen' : 'Full-Screen Mode'}
           </button>

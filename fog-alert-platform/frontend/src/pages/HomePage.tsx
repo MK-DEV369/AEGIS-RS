@@ -1,3 +1,6 @@
+import LineWaves from '@/components/LineWaves'
+import GradientText from '@/components/GradientText'
+
 const objectives = [
   'Predict fog intensity in advance to reduce accident risk.',
   'Detect potholes, traffic signs, and road humps from front camera feeds.',
@@ -16,16 +19,38 @@ const stack = ['🐍 Python', '⚛️ React', '🎯 YOLOv8', '🌫️ XGBoost', 
 
 export function HomePage() {
   return (
-    <div className="page">
+    <div className="page home-page">
+      <div className="home-bg-layer" aria-hidden="true">
+        <LineWaves
+          speed={0.3}
+          innerLineCount={32}
+          outerLineCount={36}
+          warpIntensity={1}
+          rotation={-45}
+          edgeFadeWidth={0}
+          colorCycleSpeed={1}
+          brightness={0.2}
+          color1="#ffffff"
+          color2="#ffffff"
+          color3="#ffffff"
+          enableMouseInteraction
+          mouseInfluence={2}
+        />
+      </div>
+
       <section className="hero-section glass">
         <p className="tagline">Predict • Detect • Prevent</p>
-        <h1>AEGIS-RS</h1>
+        <GradientText className="text-5xl font-bold" colors={['#5227FF', '#FF9FFC', '#B19EEF']} animationSpeed={6}>
+          AEGIS-RS
+        </GradientText>
         <h2>AI-Based Intelligent Multi-Hazard Road Monitoring System</h2>
       </section>
 
       <section className="grid two-col">
         <article className="panel glass">
-          <h3>About the Project</h3>
+          <GradientText className="text-2xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            About the Project
+          </GradientText>
           <p>
             AEGIS-RS is a safety-first intelligent road monitoring platform that focuses on fog prediction and
             multi-hazard detection using front-camera vision. It unifies model outputs for fog, potholes, road humps,
@@ -34,7 +59,9 @@ export function HomePage() {
         </article>
 
         <article className="panel glass">
-          <h3>Objectives</h3>
+          <GradientText className="text-2xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Objectives
+          </GradientText>
           <ul className="bullet-list">
             {objectives.map((item) => (
               <li key={item}>{item}</li>
@@ -44,7 +71,9 @@ export function HomePage() {
       </section>
 
       <section className="panel glass">
-        <h3>System Overview</h3>
+        <GradientText className="text-2xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+          System Overview
+        </GradientText>
         <div className="flow">
           <div className="flow-node">Front Camera Feed</div>
           <div className="flow-arrow">→</div>
@@ -58,7 +87,9 @@ export function HomePage() {
 
       <section className="grid two-col">
         <article className="panel glass">
-          <h3>Team</h3>
+          <GradientText className="text-2xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Team
+          </GradientText>
           <div className="team-list">
             {team.map((member) => (
               <div key={member.name} className="team-card">
@@ -70,7 +101,9 @@ export function HomePage() {
         </article>
 
         <article className="panel glass">
-          <h3>Tech Stack</h3>
+          <GradientText className="text-2xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Tech Stack
+          </GradientText>
           <div className="stack-grid">
             {stack.map((item) => (
               <span key={item} className="chip">

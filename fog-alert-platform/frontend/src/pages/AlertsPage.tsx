@@ -1,3 +1,5 @@
+import GradientText from '@/components/GradientText'
+
 const alerts = [
   { severity: 'HIGH', location: 'NH75', visibility: '30m', speed: '25 km/h' },
   { severity: 'MEDIUM', location: 'Ring Road', visibility: '60m', speed: '40 km/h' },
@@ -7,11 +9,15 @@ const alerts = [
 export function AlertsPage() {
   return (
     <div className="page">
-      <h1 className="page-title">Alerts & Notifications</h1>
+      <GradientText className="page-title text-4xl font-bold" colors={['#5227FF', '#FF9FFC', '#B19EEF']} animationSpeed={6}>
+        Alerts & Notifications
+      </GradientText>
 
       <section className="panel glass">
         <div className="alert-toolbar">
-          <h3>Real-time Alert Feed</h3>
+          <GradientText className="text-xl font-bold" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Real-time Alert Feed
+          </GradientText>
           <select className="filter-select" defaultValue="all">
             <option value="all">Filter: All Severity</option>
             <option value="high">High</option>

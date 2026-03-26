@@ -1,25 +1,35 @@
+import GradientText from '@/components/GradientText'
+
 export function AnalyticsStatusPage() {
   return (
     <div className="page">
-      <h1 className="page-title">Analytics + System Status</h1>
+      <GradientText className="page-title text-4xl font-bold" colors={['#5227FF', '#FF9FFC', '#B19EEF']} animationSpeed={6}>
+        Analytics + System Status
+      </GradientText>
 
       <section className="grid dashboard-main">
         <article className="panel glass">
-          <h3>Analytics</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            Analytics
+          </GradientText>
           <div className="fake-chart compact">
             <div className="line wave-1" />
           </div>
-          <p>Fog occurrence graph • Hazard distribution • Risk trends</p>
+          <p className="text-white">Fog occurrence graph • Hazard distribution • Risk trends</p>
 
           <div className="insight-block">
-            <h4>Insights</h4>
+            <GradientText className="text-lg font-bold mb-2" colors={['#4b84ff', '#9b59ff']} animationSpeed={10}>
+              Insights
+            </GradientText>
             <p>Peak Fog Time: 5–7 AM</p>
             <p>High Risk Zone: NH75 Valley</p>
           </div>
         </article>
 
         <aside className="panel glass insights-panel">
-          <h3>System Status</h3>
+          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
+            System Status
+          </GradientText>
           <div className="status-row">
             <span>YOLOv8</span>
             <strong className="status-ok">Running</strong>

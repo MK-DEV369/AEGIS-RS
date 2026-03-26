@@ -71,6 +71,21 @@
   animation: fadeIn 0.35s ease;
 }
 
+.home-page {
+  position: relative;
+  isolation: isolate;
+}
+
+.home-bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 16px;
+  overflow: hidden;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .hero-section {
   padding: 28px;
   text-align: left;
@@ -406,6 +421,55 @@
   50% {
     box-shadow: 0 0 0 10px rgba(170, 59, 255, 0);
   }
+}
+
+/* Ensure all text in panels is white */
+.panel p,
+.panel span,
+.panel li {
+  color: rgb(255, 255, 255);
+}
+
+.insight-block p {
+  color: rgb(255, 255, 255);
+}
+
+.alert-item p {
+  color: rgb(255, 255, 255);
+}
+
+.status-row span {
+  color: rgb(255, 255, 255);
+}
+
+/* GradientText page title styling */
+.page-title {
+  display: inline-block;
+  width: 100%;
+}
+
+/* Ensure bullet list text is white */
+.bullet-list li {
+  color: rgb(255, 255, 255);
+}
+
+/* Team card text */
+.team-card {
+  color: rgb(255, 255, 255);
+}
+
+.team-card strong {
+  color: rgb(255, 255, 255);
+}
+
+.team-card span {
+  color: rgb(255, 255, 255);
+  opacity: 0.9;
+}
+
+/* Flow node text */
+.flow-node {
+  color: rgb(255, 255, 255);
 }
 
 @media (max-width: 980px) {
