@@ -1,0 +1,36 @@
+{
+  "old_yolov8_pothole": {
+    "name": "old_yolov8_pothole",
+    "epochs": 30,
+    "best_mAP50_95": {
+      "epoch": 30,
+      "value": 0.75621
+    },
+    "best_mAP50": {
+      "epoch": 30,
+      "value": 0.98262
+    },
+    "best_precision": {
+      "epoch": 30,
+      "value": 0.96114
+    },
+    "best_recall": {
+      "epoch": 29,
+      "value": 0.94303
+    },
+    "lowest_val_box_loss": {
+      "epoch": 30,
+      "value": 0.84945
+    },
+    "lowest_val_cls_loss": {
+      "epoch": 30,
+      "value": 0.53692
+    },
+    "lowest_val_dfl_loss": {
+      "epoch": 30,
+      "value": 1.01767
+    },
+    "final_time_seconds": 22347.4,
+    "avg_time_per_epoch_seconds": 745.4256206896551
+  }
+}
