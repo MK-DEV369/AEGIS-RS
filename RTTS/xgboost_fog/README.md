@@ -11,8 +11,23 @@ This starter creates a **tabular fog-classification pipeline** from images:
 
 From this folder:
 
+CUDA training (recommended for RTX 3070):
+
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-cuda.txt
+```
+
+If you still want CPU later (optional):
+
+```bash
+pip install -r requirements-cpu.txt
+```
+
+If you want fully explicit commands in this workspace venv:
+
+```bash
+"e:/6th SEM Data/Projects/AEGIS-RS_IDP/RTTS/venv/Scripts/python.exe" -m pip install --upgrade pip
+"e:/6th SEM Data/Projects/AEGIS-RS_IDP/RTTS/venv/Scripts/python.exe" -m pip install -r requirements-cuda.txt
 ```
 
 PowerShell note: use one-line commands (or PowerShell backtick `` ` `` for line continuation), not `\`.

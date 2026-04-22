@@ -13,8 +13,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -136,3 +139,60 @@ XGBOOST_FOG_DIR = Path(os.getenv("XGBOOST_FOG_DIR", IDP_ROOT_DIR / "RTTS" / "xgb
 XGBOOST_FOG_MODEL_PATH = Path(
     os.getenv("XGBOOST_FOG_MODEL_PATH", XGBOOST_FOG_DIR / "models" / "xgboost_fog.joblib")
 )
+
+DEHAZE_ENABLED = os.getenv("DEHAZE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+DEHAZE_MODEL_PATH = Path(
+    os.getenv("DEHAZE_MODEL_PATH", XGBOOST_FOG_DIR / "models" / "ffa_rtts_dehaze_fog.pt")
+)
+DEHAZE_IMAGE_SIZE = int(os.getenv("DEHAZE_IMAGE_SIZE", "256"))
+
+YOLOV8_MODEL_PATH = Path(
+    os.getenv(
+        "YOLOV8_MODEL_PATH",
+        IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "runs" / "detect" / "train7" / "weights" / "best.pt",
+    )
+)
+
+
+def _parse_path_list(value: str) -> list[Path]:
+    separators = [";", ","]
+    for sep in separators:
+        if sep in value:
+            return [Path(item.strip()) for item in value.split(sep) if item.strip()]
+    value = value.strip()
+    return [Path(value)] if value else []
+
+
+YOLOV8_AUTO_SELECT_LATEST = os.getenv("YOLOV8_AUTO_SELECT_LATEST", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+YOLOV8_MODEL_CANDIDATES = _parse_path_list(
+    os.getenv(
+        "YOLOV8_MODEL_CANDIDATES",
+        ";".join(
+            [
+                str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "runs" / "detect" / "train7" / "weights" / "best.pt"),
+                str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "runs" / "detect" / "train" / "weights" / "best.pt"),
+                str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "yolo26n.pt"),
+                str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "yolov8n.pt"),
+                str(IDP_ROOT_DIR / "5thsemProject" / "yolo11n.pt"),
+                str(IDP_ROOT_DIR / "5thsemProject" / "yolov8n.pt"),
+            ]
+        ),
+    )
+)
+YOLOV8_CONF_THRESHOLD = float(os.getenv("YOLOV8_CONF_THRESHOLD", "0.25"))
+YOLOV8_IOU_THRESHOLD = float(os.getenv("YOLOV8_IOU_THRESHOLD", "0.45"))
+YOLOV8_MAX_DET = int(os.getenv("YOLOV8_MAX_DET", "100"))
+
+# Stream/chunk runtime controls
+STREAM_MAX_CHUNK_BYTES = int(os.getenv("STREAM_MAX_CHUNK_BYTES", str(1024 * 1024)))
+STREAM_MAX_CHUNKS_PER_FRAME = int(os.getenv("STREAM_MAX_CHUNKS_PER_FRAME", "64"))
+STREAM_CHUNK_TTL_SECONDS = int(os.getenv("STREAM_CHUNK_TTL_SECONDS", "120"))
+SOURCE_STATUS_TTL_SECONDS = int(os.getenv("SOURCE_STATUS_TTL_SECONDS", "900"))
+
+# Debug logging controls
+PIPELINE_DEBUG_LOGS = os.getenv("PIPELINE_DEBUG_LOGS", "true").strip().lower() in {"1", "true", "yes", "on"}
