@@ -6,7 +6,7 @@ import uuid
 
 from django.conf import settings
 from rest_framework import status
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -27,7 +27,18 @@ def _as_bool(value: object) -> bool:
 
 class HealthView(APIView):
 	def get(self, request):
-		return Response({"status": "ok"})
+		return Response(
+			{
+				"status": "ok",
+				"models": {
+					"fog_dehaze_model": str(settings.DEHAZE_MODEL_PATH),
+					"fog_classifier_model": str(settings.XGBOOST_FOG_MODEL_PATH),
+					"pothole_primary_model": str(settings.YOLOV8_MODEL_PATH),
+					"pothole_candidates": [str(path) for path in settings.YOLOV8_MODEL_CANDIDATES],
+					"dehaze_enabled": bool(settings.DEHAZE_ENABLED),
+				},
+			}
+		)
 
 
 class SourceStatusView(APIView):
@@ -121,6 +132,9 @@ class _BasePredictView(APIView):
 		if settings.PIPELINE_DEBUG_LOGS:
 			logger.debug(message, *args)
 
+	def _is_realtime(self, request) -> bool:
+		return _as_bool(request.data.get("realtime"))
+
 
 class FogPredictView(_BasePredictView):
 	def post(self, request):
@@ -162,7 +176,11 @@ class FogPredictView(_BasePredictView):
 			)
 
 		try:
-			output = fog_predictor.predict_fog_only_from_bytes(payload_result["payload"], source_id=source_id)
+			output = fog_predictor.predict_fog_only_from_bytes(
+				payload_result["payload"],
+				source_id=source_id,
+				realtime=self._is_realtime(request),
+			)
 			output["request_id"] = request_id
 			self._record_state(
 				source_id=source_id,
@@ -235,7 +253,11 @@ class PotholePredictView(_BasePredictView):
 			)
 
 		try:
-			output = fog_predictor.predict_pothole_only_from_bytes(payload_result["payload"], source_id=source_id)
+			output = fog_predictor.predict_pothole_only_from_bytes(
+				payload_result["payload"],
+				source_id=source_id,
+				realtime=self._is_realtime(request),
+			)
 			output["request_id"] = request_id
 			self._record_state(
 				source_id=source_id,
@@ -308,7 +330,11 @@ class CombinedPredictView(_BasePredictView):
 			)
 
 		try:
-			output = fog_predictor.predict_combined_from_bytes(payload_result["payload"], source_id=source_id)
+			output = fog_predictor.predict_combined_from_bytes(
+				payload_result["payload"],
+				source_id=source_id,
+				realtime=self._is_realtime(request),
+			)
 			output["request_id"] = request_id
 			self._record_state(
 				source_id=source_id,
@@ -339,3 +365,45 @@ class CombinedPredictView(_BasePredictView):
 				{"error": f"Prediction failed: {exc}", "request_id": request_id},
 				status=status.HTTP_400_BAD_REQUEST,
 			)
+
+
+class Esp32TelemetryIngestView(APIView):
+	parser_classes = [JSONParser, FormParser, MultiPartParser]
+
+	def post(self, request):
+		source_id = str(request.data.get("source_id") or "esp32_unknown").strip() or "esp32_unknown"
+		payload: dict[str, object] = {
+			"device_ts": request.data.get("device_ts"),
+			"seq": request.data.get("seq"),
+			"lat": request.data.get("lat"),
+			"lng": request.data.get("lng"),
+			"speed_kmph": request.data.get("speed_kmph"),
+			"temp_c": request.data.get("temp_c"),
+			"humidity": request.data.get("humidity"),
+			"rssi": request.data.get("rssi"),
+			"battery_v": request.data.get("battery_v"),
+			"event": request.data.get("event"),
+		}
+		payload = {k: v for k, v in payload.items() if v is not None}
+
+		stored = runtime_state.update_telemetry(source_id=source_id, payload=payload)
+		runtime_state.update_source(
+			source_id=source_id,
+			mode="esp32_telemetry",
+			request_id=str(uuid.uuid4()),
+			latency_ms=0.0,
+			status_text="ok",
+		)
+		return Response({"ok": True, "source_id": source_id, "telemetry": stored}, status=status.HTTP_200_OK)
+
+
+class Esp32TelemetryLatestView(APIView):
+	def get(self, request):
+		limit_raw = request.query_params.get("limit")
+		try:
+			limit = int(limit_raw) if limit_raw else 50
+		except Exception:
+			limit = 50
+
+		rows = runtime_state.list_telemetry(limit=limit)
+		return Response({"count": len(rows), "items": rows}, status=status.HTTP_200_OK)

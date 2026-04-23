@@ -25,6 +25,10 @@ Django REST API for independent fog and pothole workflows with chunked frame ing
 - `POST /api/cache/clear/`
 - Optional body field: `reset_models=true` to unload in-memory model handles
 
+5. ESP32 telemetry ingest
+- `POST /api/telemetry/ingest/` -> accepts sensor and GPS packets
+- `GET /api/telemetry/latest/` -> recent telemetry samples by source
+
 5. Debug and tracing
 - Every processed request returns `request_id`
 - Optional debug logs controlled by `PIPELINE_DEBUG_LOGS`
@@ -57,7 +61,7 @@ Recommended setup:
 Run the relay from this backend folder:
 
 ```powershell
-python scripts/phone_stream_relay.py --stream-url http://192.168.1.67:6969/video --backend-base http://192.168.1.41:8000 --mode fog --source-id phone_fog_01 --stream-id fog_cam --fps 5
+python scripts/phone_stream_relay.py --stream-url http://192.168.1.67:6969/video --backend-base http://192.168.1.41:8000 --mode fog --source-id phone_fog_01 --stream-id fog_cam --fps 5 --realtime --quiet
 ```
 
 For the pothole phone, change `--mode pothole`, `--source-id`, and `--stream-id`.
@@ -65,7 +69,7 @@ For the pothole phone, change `--mode pothole`, `--source-id`, and `--stream-id`
 If the network is unstable, add chunking:
 
 ```powershell
-python scripts/phone_stream_relay.py --stream-url http://192.168.1.67:6969/video --backend-base http://192.168.1.41:8000 --mode fog --source-id phone_fog_01 --stream-id fog_cam --fps 3 --chunk-size 50000
+python scripts/phone_stream_relay.py --stream-url http://192.168.1.67:6969/video --backend-base http://192.168.1.41:8000 --mode fog --source-id phone_fog_01 --stream-id fog_cam --fps 3 --chunk-size 50000 --realtime --quiet
 ```
 
 Use chunking only if the plain image upload is too large or the Wi-Fi is flaky. For most phones, plain JPEG frame uploads are simpler and faster.
@@ -96,6 +100,36 @@ Then run the printed relay commands. Typical URLs become:
 - Phone A stream: `http://127.0.0.1:16969/video`
 - Phone B stream: `http://127.0.0.1:26969/video`
 
+## ESP32 Demo Data Path
+
+Use this API for ESP32 packets:
+
+- `POST /api/telemetry/ingest/`
+
+Expected keys (send any subset):
+
+- `source_id`
+- `device_ts`
+- `seq`
+- `lat`
+- `lng`
+- `speed_kmph`
+- `temp_c`
+- `humidity`
+- `rssi`
+- `battery_v`
+- `event`
+
+Read back recent packets:
+
+- `GET /api/telemetry/latest/?limit=20`
+
+Quick sender for demo rehearsal from laptop:
+
+```powershell
+python scripts/esp32_telemetry_sender.py --backend-base http://127.0.0.1:8000 --source-id esp32_demo_01 --interval 0.4 --count 200
+```
+
 If assignment order is not what you want, pass serials explicitly:
 
 ```powershell
@@ -109,6 +143,12 @@ python scripts/setup_usb_phones.py --serial-a YOUR_SERIAL_A --serial-b YOUR_SERI
 
 ### Source status
 - `GET /api/sources/status/`
+
+### Telemetry ingest (ESP32)
+- `POST /api/telemetry/ingest/`
+
+### Telemetry latest (ESP32)
+- `GET /api/telemetry/latest/`
 
 ### Clear runtime cache
 - `POST /api/cache/clear/`
@@ -219,6 +259,12 @@ Core model vars:
 - `YOLOV8_CONF_THRESHOLD`
 - `YOLOV8_IOU_THRESHOLD`
 - `YOLOV8_MAX_DET`
+- `YOLOV8_IMGSZ`
+- `YOLOV8_IMGSZ_REALTIME`
+- `YOLOV8_HALF`
+- `YOLOV8_DEVICE`
+- `REALTIME_MAX_FRAME_SIDE`
+- `REALTIME_SKIP_DEHAZE`
 
 Chunk/cache/debug vars:
 - `STREAM_MAX_CHUNK_BYTES`

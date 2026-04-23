@@ -226,7 +226,7 @@ class YoloDetector:
         if settings.PIPELINE_DEBUG_LOGS:
             logger.debug("YOLO model loaded: %s", resolved_model_path)
 
-    def predict(self, bgr: np.ndarray) -> dict[str, object]:
+    def predict(self, bgr: np.ndarray, realtime: bool = False) -> dict[str, object]:
         self._ensure_loaded()
         if self._model is None:
             return {
@@ -239,12 +239,21 @@ class YoloDetector:
 
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         pil_image = Image.fromarray(rgb)
+        imgsz = int(settings.YOLOV8_IMGSZ_REALTIME if realtime else settings.YOLOV8_IMGSZ)
+        device = str(settings.YOLOV8_DEVICE).strip()
+        predict_kwargs = {
+            "source": pil_image,
+            "conf": float(settings.YOLOV8_CONF_THRESHOLD),
+            "iou": float(settings.YOLOV8_IOU_THRESHOLD),
+            "max_det": int(settings.YOLOV8_MAX_DET),
+            "imgsz": imgsz,
+            "half": bool(settings.YOLOV8_HALF and realtime),
+            "verbose": False,
+        }
+        if device:
+            predict_kwargs["device"] = device
         results = self._model.predict(
-            source=pil_image,
-            conf=float(settings.YOLOV8_CONF_THRESHOLD),
-            iou=float(settings.YOLOV8_IOU_THRESHOLD),
-            max_det=int(settings.YOLOV8_MAX_DET),
-            verbose=False,
+            **predict_kwargs,
         )
 
         boxes = results[0].boxes
@@ -274,6 +283,8 @@ class YoloDetector:
             "enabled": True,
             "model_path": str(self.selected_model_path),
             "task": str(getattr(self._model, "task", "unknown")),
+            "imgsz": imgsz,
+            "realtime": realtime,
             "count": len(items),
             "items": items,
         }
@@ -324,6 +335,32 @@ class FogPredictor:
             raise ValueError("Invalid or unsupported image bytes.")
         return image
 
+    def _prepare_realtime_frame(self, bgr: np.ndarray, realtime: bool) -> tuple[np.ndarray, dict[str, object]]:
+        if not realtime:
+            return bgr, {"realtime": False, "resized": False}
+
+        max_side = int(settings.REALTIME_MAX_FRAME_SIDE)
+        if max_side < 64:
+            return bgr, {"realtime": True, "resized": False, "note": "REALTIME_MAX_FRAME_SIDE too low"}
+
+        height, width = bgr.shape[:2]
+        long_side = max(height, width)
+        if long_side <= max_side:
+            return bgr, {"realtime": True, "resized": False, "target_max_side": max_side}
+
+        scale = max_side / float(long_side)
+        out_w = max(32, int(width * scale))
+        out_h = max(32, int(height * scale))
+        resized = cv2.resize(bgr, (out_w, out_h), interpolation=cv2.INTER_AREA)
+        return resized, {
+            "realtime": True,
+            "resized": True,
+            "target_max_side": max_side,
+            "input_shape": [height, width],
+            "output_shape": [out_h, out_w],
+            "scale": scale,
+        }
+
     def _predict_fog_from_bgr(self, dehazed_bgr: np.ndarray) -> dict[str, object]:
         with NamedTemporaryFile(suffix=".png", delete=True) as temp_file:
             ok, encoded = cv2.imencode(".png", dehazed_bgr)
@@ -350,14 +387,25 @@ class FogPredictor:
             "fog_label": "fog" if pred == 1 else "clear",
         }
 
-    def predict_fog_only_from_bytes(self, image_bytes: bytes, source_id: str | None = None) -> dict[str, object]:
+    def predict_fog_only_from_bytes(
+        self,
+        image_bytes: bytes,
+        source_id: str | None = None,
+        realtime: bool = False,
+    ) -> dict[str, object]:
         started = time.perf_counter()
         bgr = self._decode_image(image_bytes)
-        dehazed_bgr, dehaze_meta = self.dehazer.dehaze_bgr(bgr)
+        prepared_bgr, realtime_meta = self._prepare_realtime_frame(bgr, realtime=realtime)
+        if realtime and settings.REALTIME_SKIP_DEHAZE:
+            dehazed_bgr = prepared_bgr
+            dehaze_meta = {"enabled": False, "method": "skipped_realtime"}
+        else:
+            dehazed_bgr, dehaze_meta = self.dehazer.dehaze_bgr(prepared_bgr)
 
         response = {
             **self._predict_fog_from_bgr(dehazed_bgr),
             "dehazing": dehaze_meta,
+            "realtime": realtime_meta,
             "mode": "fog_only",
             "latency_ms": (time.perf_counter() - started) * 1000.0,
         }
@@ -367,15 +415,26 @@ class FogPredictor:
             logger.debug("Fog-only pipeline done source_id=%s latency_ms=%.2f", source_id, response["latency_ms"])
         return response
 
-    def predict_pothole_only_from_bytes(self, image_bytes: bytes, source_id: str | None = None) -> dict[str, object]:
+    def predict_pothole_only_from_bytes(
+        self,
+        image_bytes: bytes,
+        source_id: str | None = None,
+        realtime: bool = False,
+    ) -> dict[str, object]:
         started = time.perf_counter()
         bgr = self._decode_image(image_bytes)
-        dehazed_bgr, dehaze_meta = self.dehazer.dehaze_bgr(bgr)
-        yolo_output = self.yolo.predict(dehazed_bgr)
+        prepared_bgr, realtime_meta = self._prepare_realtime_frame(bgr, realtime=realtime)
+        if realtime and settings.REALTIME_SKIP_DEHAZE:
+            dehazed_bgr = prepared_bgr
+            dehaze_meta = {"enabled": False, "method": "skipped_realtime"}
+        else:
+            dehazed_bgr, dehaze_meta = self.dehazer.dehaze_bgr(prepared_bgr)
+        yolo_output = self.yolo.predict(dehazed_bgr, realtime=realtime)
 
         response = {
             "detections": yolo_output,
             "dehazing": dehaze_meta,
+            "realtime": realtime_meta,
             "mode": "pothole_only",
             "latency_ms": (time.perf_counter() - started) * 1000.0,
         }
@@ -390,16 +449,27 @@ class FogPredictor:
             )
         return response
 
-    def predict_combined_from_bytes(self, image_bytes: bytes, source_id: str | None = None) -> dict[str, object]:
+    def predict_combined_from_bytes(
+        self,
+        image_bytes: bytes,
+        source_id: str | None = None,
+        realtime: bool = False,
+    ) -> dict[str, object]:
         started = time.perf_counter()
         bgr = self._decode_image(image_bytes)
-        dehazed_bgr, dehaze_meta = self.dehazer.dehaze_bgr(bgr)
-        yolo_output = self.yolo.predict(dehazed_bgr)
+        prepared_bgr, realtime_meta = self._prepare_realtime_frame(bgr, realtime=realtime)
+        if realtime and settings.REALTIME_SKIP_DEHAZE:
+            dehazed_bgr = prepared_bgr
+            dehaze_meta = {"enabled": False, "method": "skipped_realtime"}
+        else:
+            dehazed_bgr, dehaze_meta = self.dehazer.dehaze_bgr(prepared_bgr)
+        yolo_output = self.yolo.predict(dehazed_bgr, realtime=realtime)
 
         response = {
             **self._predict_fog_from_bgr(dehazed_bgr),
             "dehazing": dehaze_meta,
             "detections": yolo_output,
+            "realtime": realtime_meta,
             "mode": "combined",
             "latency_ms": (time.perf_counter() - started) * 1000.0,
         }

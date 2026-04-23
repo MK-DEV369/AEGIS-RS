@@ -13,7 +13,7 @@
   --accent: oklch(0.97 0 0);
   --accent-bg: rgba(155, 89, 255, 0.14);
   --accent-border: rgba(155, 89, 255, 0.5);
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: 'Geist Variable', sans-serif;
   color: var(--text);
   background: var(--bg);
   line-height: 1.5;
@@ -54,9 +54,10 @@
 }
 
 #root {
-  width: min(1200px, 96vw);
-  margin: 0 auto;
-  padding: 10px 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 10px 12px;
 }
 
 body {

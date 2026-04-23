@@ -28,6 +28,8 @@ class RelayConfig:
     chunk_size: int
     timeout: float
     reconnect_delay: float
+    realtime: bool
+    quiet: bool
 
 
 def parse_args() -> RelayConfig:
@@ -48,6 +50,8 @@ def parse_args() -> RelayConfig:
     parser.add_argument("--chunk-size", type=int, default=0, help="Optional chunk size in bytes. 0 sends each frame as one image.")
     parser.add_argument("--timeout", type=float, default=8.0, help="HTTP timeout in seconds.")
     parser.add_argument("--reconnect-delay", type=float, default=2.0, help="Delay before reopening the camera stream.")
+    parser.add_argument("--realtime", action="store_true", help="Enable backend realtime mode for low-latency inference.")
+    parser.add_argument("--quiet", action="store_true", help="Print concise status logs for long-running streams.")
     args = parser.parse_args()
 
     backend_base = args.backend_base.rstrip("/")
@@ -70,6 +74,8 @@ def parse_args() -> RelayConfig:
         chunk_size=max(0, int(args.chunk_size)),
         timeout=max(1.0, float(args.timeout)),
         reconnect_delay=max(0.5, float(args.reconnect_delay)),
+        realtime=bool(args.realtime),
+        quiet=bool(args.quiet),
     )
 
 
@@ -107,6 +113,7 @@ def post_image_frame(session: requests.Session, config: RelayConfig, payload: by
         "source_id": config.source_id,
         "stream_id": config.stream_id,
         "frame_id": frame_id,
+        "realtime": "true" if config.realtime else "false",
     }
     return session.post(config.backend_url, files=files, data=data, timeout=config.timeout)
 
@@ -129,6 +136,7 @@ def post_chunked_frame(session: requests.Session, config: RelayConfig, payload: 
             "frame_id": frame_id,
             "chunk_index": str(chunk_index),
             "total_chunks": str(total_chunks),
+            "realtime": "true" if config.realtime else "false",
         }
         last_response = session.post(config.backend_url, files=files, data=data, timeout=config.timeout)
         if last_response.status_code not in (200, 202):
@@ -139,11 +147,17 @@ def post_chunked_frame(session: requests.Session, config: RelayConfig, payload: 
     return last_response
 
 
-def print_response(response: requests.Response) -> None:
+def print_response(response: requests.Response, quiet: bool = False) -> None:
     try:
         payload = response.json()
     except Exception:
         payload = response.text
+    if quiet and isinstance(payload, dict):
+        request_id = payload.get("request_id", "-")
+        latency = payload.get("latency_ms", "-")
+        mode = payload.get("mode", "-")
+        print(f"[{response.status_code}] mode={mode} req={request_id} latency_ms={latency}")
+        return
     print(f"[{response.status_code}] {payload}")
 
 
@@ -153,6 +167,7 @@ def main() -> int:
     print(f"Relay target: {config.backend_url}")
     print(f"Camera source: {config.stream_url}")
     print(f"Source ID: {config.source_id} | Stream ID: {config.stream_id}")
+    print(f"Realtime mode: {config.realtime}")
 
     session = requests.Session()
     frame_count = 0
@@ -178,7 +193,7 @@ def main() -> int:
                 else:
                     response = post_image_frame(session, config, frame_bytes, frame_id)
 
-                print_response(response)
+                print_response(response, quiet=config.quiet)
                 frame_count += 1
 
                 next_tick += interval

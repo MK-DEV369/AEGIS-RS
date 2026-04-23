@@ -149,7 +149,7 @@ DEHAZE_IMAGE_SIZE = int(os.getenv("DEHAZE_IMAGE_SIZE", "256"))
 YOLOV8_MODEL_PATH = Path(
     os.getenv(
         "YOLOV8_MODEL_PATH",
-        IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "runs" / "detect" / "train7" / "weights" / "best.pt",
+        IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "yolo26n.pt",
     )
 )
 
@@ -174,12 +174,8 @@ YOLOV8_MODEL_CANDIDATES = _parse_path_list(
         "YOLOV8_MODEL_CANDIDATES",
         ";".join(
             [
-                str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "runs" / "detect" / "train7" / "weights" / "best.pt"),
-                str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "runs" / "detect" / "train" / "weights" / "best.pt"),
                 str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "yolo26n.pt"),
                 str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "yolov8n.pt"),
-                str(IDP_ROOT_DIR / "5thsemProject" / "yolo11n.pt"),
-                str(IDP_ROOT_DIR / "5thsemProject" / "yolov8n.pt"),
             ]
         ),
     )
@@ -187,6 +183,18 @@ YOLOV8_MODEL_CANDIDATES = _parse_path_list(
 YOLOV8_CONF_THRESHOLD = float(os.getenv("YOLOV8_CONF_THRESHOLD", "0.25"))
 YOLOV8_IOU_THRESHOLD = float(os.getenv("YOLOV8_IOU_THRESHOLD", "0.45"))
 YOLOV8_MAX_DET = int(os.getenv("YOLOV8_MAX_DET", "100"))
+YOLOV8_IMGSZ = int(os.getenv("YOLOV8_IMGSZ", "640"))
+YOLOV8_IMGSZ_REALTIME = int(os.getenv("YOLOV8_IMGSZ_REALTIME", "512"))
+YOLOV8_HALF = os.getenv("YOLOV8_HALF", "false").strip().lower() in {"1", "true", "yes", "on"}
+YOLOV8_DEVICE = os.getenv("YOLOV8_DEVICE", "")
+
+REALTIME_MAX_FRAME_SIDE = int(os.getenv("REALTIME_MAX_FRAME_SIDE", "960"))
+REALTIME_SKIP_DEHAZE = os.getenv("REALTIME_SKIP_DEHAZE", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 # Stream/chunk runtime controls
 STREAM_MAX_CHUNK_BYTES = int(os.getenv("STREAM_MAX_CHUNK_BYTES", str(1024 * 1024)))

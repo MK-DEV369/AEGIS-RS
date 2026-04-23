@@ -1,45 +1,42 @@
-import GradientText from '@/components/GradientText'
+import BorderGlow from '@/components/BorderGlow'
+import ShinyText from '@/components/ShinyText'
 
 export function LiveMonitoringPage() {
   return (
     <div className="page">
-      <GradientText className="page-title text-4xl font-bold" colors={['#5227FF', '#FF9FFC', '#B19EEF']} animationSpeed={6}>
-        Live Monitoring
-      </GradientText>
-
       <section className="grid dashboard-main">
-        <article className="panel glass video-panel">
-          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
-            Live Video Stream
-          </GradientText>
-          <div className="video-placeholder pulse-border">Camera Stream Placeholder</div>
+        <article className="video-panel">
+          <BorderGlow className="panel glass">
+            <ShinyText text="Live Video Stream" className="text-xl font-bold mb-3" color="#ffffff" shineColor="#ffffff" />
+            <div className="video-placeholder pulse-border">Camera Stream Placeholder</div>
+          </BorderGlow>
         </article>
 
-        <aside className="panel glass insights-panel">
-          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
-            Detection Panel
-          </GradientText>
-          <div className="insight-block">
-            <p>Object: Pothole</p>
-            <p>Confidence: 92%</p>
-            <p>Fog Level: High</p>
-          </div>
+        <aside className="insights-panel">
+          <BorderGlow className="panel glass insights-panel">
+            <ShinyText text="Detection Panel" className="text-xl font-bold mb-3" color="#ffffff" shineColor="#ffffff" />
+            <div className="insight-block">
+              <p>Object: Pothole</p>
+              <p>Confidence: 92%</p>
+              <p>Fog Level: High</p>
+            </div>
+          </BorderGlow>
         </aside>
       </section>
 
       <section className="grid two-col">
-        <article className="panel glass">
-          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
-            Before (Foggy)
-          </GradientText>
-          <div className="image-box">Foggy Image</div>
+        <article>
+          <BorderGlow className="panel glass">
+            <ShinyText text="Before (Foggy)" className="text-xl font-bold mb-3" color="#ffffff" shineColor="#ffffff" />
+            <div className="image-box">Foggy Image</div>
+          </BorderGlow>
         </article>
 
-        <article className="panel glass">
-          <GradientText className="text-xl font-bold mb-3" colors={['#4b84ff', '#9b59ff', '#5ce1e6']} animationSpeed={8}>
-            After (Enhanced / Dehazed)
-          </GradientText>
-          <div className="image-box">Enhanced Image</div>
+        <article>
+          <BorderGlow className="panel glass">
+            <ShinyText text="After (Enhanced / Dehazed)" className="text-xl font-bold mb-3" color="#ffffff" shineColor="#ffffff" />
+            <div className="image-box">Enhanced Image</div>
+          </BorderGlow>
         </article>
       </section>
     </div>

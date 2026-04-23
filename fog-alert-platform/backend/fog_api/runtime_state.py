@@ -11,6 +11,7 @@ class RuntimeState:
         self._lock = Lock()
         self._source_state: dict[str, dict[str, object]] = {}
         self._chunk_state: dict[str, dict[str, object]] = {}
+        self._telemetry_state: dict[str, dict[str, object]] = {}
 
     def _cleanup_locked(self) -> None:
         now = time.time()
@@ -32,6 +33,14 @@ class RuntimeState:
         ]
         for chunk_key in stale_chunks:
             self._chunk_state.pop(chunk_key, None)
+
+        stale_telemetry = [
+            source_id
+            for source_id, meta in self._telemetry_state.items()
+            if now - float(meta.get("updated_at", now)) > source_ttl
+        ]
+        for source_id in stale_telemetry:
+            self._telemetry_state.pop(source_id, None)
 
     def update_source(
         self,
@@ -65,6 +74,28 @@ class RuntimeState:
             rows = list(self._source_state.values())
         rows.sort(key=lambda item: float(item.get("updated_at", 0.0)), reverse=True)
         return rows
+
+    def update_telemetry(self, *, source_id: str, payload: dict[str, object]) -> dict[str, object]:
+        now = time.time()
+        with self._lock:
+            self._cleanup_locked()
+            current = self._telemetry_state.get(source_id, {})
+            sample_count = int(current.get("sample_count", 0)) + 1
+            merged = {
+                **payload,
+                "source_id": source_id,
+                "sample_count": sample_count,
+                "updated_at": now,
+            }
+            self._telemetry_state[source_id] = merged
+            return merged
+
+    def list_telemetry(self, limit: int = 50) -> list[dict[str, object]]:
+        with self._lock:
+            self._cleanup_locked()
+            rows = list(self._telemetry_state.values())
+        rows.sort(key=lambda item: float(item.get("updated_at", 0.0)), reverse=True)
+        return rows[: max(1, int(limit))]
 
     def store_chunk(
         self,
@@ -139,9 +170,11 @@ class RuntimeState:
         with self._lock:
             source_count = len(self._source_state)
             chunk_count = len(self._chunk_state)
+            telemetry_count = len(self._telemetry_state)
             self._source_state.clear()
             self._chunk_state.clear()
-        return {"sources_cleared": source_count, "chunks_cleared": chunk_count}
+            self._telemetry_state.clear()
+        return {"sources_cleared": source_count, "chunks_cleared": chunk_count, "telemetry_cleared": telemetry_count}
 
 
 runtime_state = RuntimeState()
