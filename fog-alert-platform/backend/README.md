@@ -161,6 +161,15 @@ python scripts/setup_usb_phones.py --serial-a YOUR_SERIAL_A --serial-b YOUR_SERI
 ### Pothole-only inference
 - `POST /api/pothole/predict/`
 
+### Pothole runtime status
+- `GET /api/pothole/status/`
+
+### Latest annotated pothole frame
+- `GET /api/pothole/latest-frame/`
+
+### Live annotated pothole MJPEG stream
+- `GET /api/pothole/stream/`
+
 ### Combined inference
 - `POST /api/combined/predict/`
 
@@ -219,6 +228,14 @@ curl -X POST http://127.0.0.1:8000/api/pothole/predict/ \
   -F "stream_id=pothole_cam"
 ```
 
+### Pothole relay with GPS metadata
+
+```powershell
+python scripts/phone_stream_relay.py --stream-url http://192.168.1.67:6969/video --backend-base http://127.0.0.1:8000 --mode pothole --source-id phone_pothole_01 --stream-id pothole_cam --fps 5 --realtime --lat 12.9716 --lng 77.5946 --location-source mobile
+```
+
+For low-memory devices, lower the upload rate with `--frame-skip 2` or `--frame-skip 3`.
+
 ### Clear runtime state (and unload models)
 
 ```powershell
@@ -263,6 +280,8 @@ Core model vars:
 - `YOLOV8_IMGSZ_REALTIME`
 - `YOLOV8_HALF`
 - `YOLOV8_DEVICE`
+
+For CUDA GPU execution, set `YOLOV8_DEVICE=cuda:0` when the machine has a working CUDA-enabled PyTorch install.
 - `REALTIME_MAX_FRAME_SIDE`
 - `REALTIME_SKIP_DEHAZE`
 

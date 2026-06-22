@@ -20,6 +20,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
+def _parse_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -83,7 +87,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": Path(os.getenv("SQLITE_DB_PATH", str(BASE_DIR / "db.sqlite3"))),
     }
 }
 
@@ -129,9 +133,26 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1").strip() or "127.0.0.1"
+BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", f"http://{BACKEND_HOST}:{BACKEND_PORT}").strip()
+
+FRONTEND_HOST = os.getenv("FRONTEND_HOST", "127.0.0.1").strip() or "127.0.0.1"
+FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "5173"))
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", f"http://{FRONTEND_HOST}:{FRONTEND_PORT}").strip()
+
+PHONE_POTHOLE_BASE_URL = os.getenv("PHONE_POTHOLE_BASE_URL", "").strip()
+PHONE_FOG_BASE_URL = os.getenv("PHONE_FOG_BASE_URL", "").strip()
+
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    item
+    for item in {
+        *(_parse_csv(os.getenv("CORS_ALLOWED_ORIGINS", ""))),
+        FRONTEND_BASE_URL,
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    }
+    if item
 ]
 
 IDP_ROOT_DIR = BASE_DIR.parent.parent
@@ -142,14 +163,14 @@ XGBOOST_FOG_MODEL_PATH = Path(
 
 DEHAZE_ENABLED = os.getenv("DEHAZE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 DEHAZE_MODEL_PATH = Path(
-    os.getenv("DEHAZE_MODEL_PATH", XGBOOST_FOG_DIR / "models" / "ffa_rtts_dehaze_fog.pt")
+    os.getenv("DEHAZE_MODEL_PATH", BASE_DIR.parent / "ffa_rtts_dehaze_fog.pt")
 )
 DEHAZE_IMAGE_SIZE = int(os.getenv("DEHAZE_IMAGE_SIZE", "256"))
 
 YOLOV8_MODEL_PATH = Path(
     os.getenv(
         "YOLOV8_MODEL_PATH",
-        IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "yolo26n.pt",
+        BASE_DIR.parent / "pothole.pt",
     )
 )
 
@@ -174,7 +195,7 @@ YOLOV8_MODEL_CANDIDATES = _parse_path_list(
         "YOLOV8_MODEL_CANDIDATES",
         ";".join(
             [
-                str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "yolo26n.pt"),
+                str(BASE_DIR.parent / "pothole.pt"),
                 str(IDP_ROOT_DIR / "Pothole_Segmentation_YOLOv8" / "yolov8n.pt"),
             ]
         ),
@@ -196,6 +217,8 @@ REALTIME_SKIP_DEHAZE = os.getenv("REALTIME_SKIP_DEHAZE", "true").strip().lower()
     "on",
 }
 
+POTHOLE_RECORD_TTL_SECONDS = int(os.getenv("POTHOLE_RECORD_TTL_SECONDS", "3600"))
+
 # Stream/chunk runtime controls
 STREAM_MAX_CHUNK_BYTES = int(os.getenv("STREAM_MAX_CHUNK_BYTES", str(1024 * 1024)))
 STREAM_MAX_CHUNKS_PER_FRAME = int(os.getenv("STREAM_MAX_CHUNKS_PER_FRAME", "64"))
@@ -204,3 +227,15 @@ SOURCE_STATUS_TTL_SECONDS = int(os.getenv("SOURCE_STATUS_TTL_SECONDS", "900"))
 
 # Debug logging controls
 PIPELINE_DEBUG_LOGS = os.getenv("PIPELINE_DEBUG_LOGS", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+# Backend-driven frontend defaults (no hardcoded IPs in frontend code)
+FRONTEND_POTHOLE_SOURCE_ID = os.getenv("FRONTEND_POTHOLE_SOURCE_ID", "phone_pothole_01")
+FRONTEND_FOG_SOURCE_ID = os.getenv("FRONTEND_FOG_SOURCE_ID", "phone_fog_01")
+FRONTEND_STREAM_FPS = float(os.getenv("FRONTEND_STREAM_FPS", "3"))
+FRONTEND_SHOW_ENDPOINTS = os.getenv("FRONTEND_SHOW_ENDPOINTS", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+# Mock data generation for dashboard demonstration
+ENABLE_MOCK_DATA = os.getenv("ENABLE_MOCK_DATA", "false").strip().lower() in {"1", "true", "yes", "on"}
+MOCK_DATA_INTERVAL = float(os.getenv("MOCK_DATA_INTERVAL", "2.0"))  # Generate mock frame every N seconds
+MOCK_POTHOLE_PROBABILITY = float(os.getenv("MOCK_POTHOLE_PROBABILITY", "0.6"))  # 60% chance of potholes
+MOCK_FOG_PROBABILITY = float(os.getenv("MOCK_FOG_PROBABILITY", "0.4"))  # 40% chance of fog

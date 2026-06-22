@@ -2,4 +2,24 @@
 *Annotations
 *5thsemProject
 AEGIS-RS/
-Road_Object_Detection_in_Foggy_Complex_Scenes_Based_on_Improved_YOLOv8.pdf
+
+# Python environments and bytecode caches
+.venv/
+venv/
+**/venv/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Notebook/checkpoint artifacts
+**/.ipynb_checkpoints/
+
+# Common ML training outputs and local DBs
+**/runs/
+**/wandb/
+**/*.sqlite3
+*.pdf
+*.png
+*.mp4
+*.jpg

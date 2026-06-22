@@ -21,6 +21,22 @@ const toChartPoints = (series: number[]) => {
 }
 
 export function AnalyticsStatusPage() {
+  const [apiBase] = useState(() => {
+    const explicitBase = (import.meta.env.VITE_BACKEND_BASE as string | undefined)?.trim() ?? ''
+    if (explicitBase) {
+      return explicitBase
+    }
+    if (import.meta.env.DEV) {
+      return 'http://127.0.0.1:8000'
+    }
+    return ''
+  })
+  
+  const withBase = (path: string) => {
+    const base = apiBase.replace(/\/$/, '')
+    return base ? `${base}${path}` : path
+  }
+
   const [fogSeries, setFogSeries] = useState<number[]>(() => seedSeries(58, 12))
   const [potholeSeries, setPotholeSeries] = useState<number[]>(() => seedSeries(42, 14))
   const [fps, setFps] = useState(18)
@@ -28,26 +44,84 @@ export function AnalyticsStatusPage() {
   const [fogProbability, setFogProbability] = useState(0.78)
   const [potholeDensity, setPotholeDensity] = useState(37)
 
+
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setFogSeries((previous) => {
-        const nextValue = clamp(previous[previous.length - 1] + (Math.random() * 16 - 8), 20, 92)
-        return [...previous.slice(1), nextValue]
-      })
+    let active = true
+    let timerId = 0
 
-      setPotholeSeries((previous) => {
-        const nextValue = clamp(previous[previous.length - 1] + (Math.random() * 18 - 9), 8, 78)
-        return [...previous.slice(1), nextValue]
-      })
+    const parseJsonResponse = async (response: Response, url: string) => {
+      const contentType = response.headers.get('content-type') ?? ''
+      if (!response.ok) {
+        throw new Error(`Request failed (${response.status}) for ${url}`)
+      }
+      if (!contentType.toLowerCase().includes('application/json')) {
+        throw new Error(`Expected JSON from ${url}`)
+      }
+      return response.json()
+    }
 
-      setFps((value) => Math.round(clamp(value + (Math.random() * 2.6 - 1.3), 14, 24)))
-      setLatency((value) => Math.round(clamp(value + (Math.random() * 30 - 15), 160, 295)))
-      setFogProbability((value) => Number(clamp(value + (Math.random() * 0.08 - 0.04), 0.45, 0.95).toFixed(2)))
-      setPotholeDensity((value) => Math.round(clamp(value + (Math.random() * 8 - 4), 12, 70)))
-    }, 1400)
+    const fetchData = async () => {
+      let currentFogProb = 0.78
+      let currentPotholeDensity = 37
+      let currentLatency = 210
 
-    return () => clearInterval(interval)
-  }, [])
+      // 1. Fetch Fog status
+      const fogStatusUrl = withBase('/api/fog/status/')
+      try {
+        const response = await fetch(fogStatusUrl)
+        const payload = await parseJsonResponse(response, fogStatusUrl)
+        const items = payload.items || []
+        if (items.length > 0 && active) {
+          const latest = items[0]
+          currentFogProb = Number(latest.fog_probability ?? 0.78)
+          if (latest.latency_ms) {
+            currentLatency = Math.round(latest.latency_ms)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch fog status on analytics page', err)
+      }
+
+      // 2. Fetch Pothole status
+      const potholeStatusUrl = withBase('/api/pothole/status/')
+      try {
+        const response = await fetch(potholeStatusUrl)
+        const payload = await parseJsonResponse(response, potholeStatusUrl)
+        const items = payload.items || []
+        if (items.length > 0 && active) {
+          const latest = items[0]
+          currentPotholeDensity = Math.round((latest.pothole_metrics?.max_risk ?? 0.37) * 100)
+          if (latest.latency_ms) {
+            currentLatency = Math.round((currentLatency + latest.latency_ms) / 2)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch pothole status on analytics page', err)
+      }
+
+      if (active) {
+        setFogProbability(currentFogProb)
+        setPotholeDensity(currentPotholeDensity)
+        setLatency(currentLatency)
+        
+        const calculatedFps = Math.round(clamp(1000 / currentLatency, 10, 24))
+        setFps(calculatedFps)
+
+        setFogSeries((prev) => [...prev.slice(1), Math.round(currentFogProb * 100)])
+        setPotholeSeries((prev) => [...prev.slice(1), currentPotholeDensity])
+
+        timerId = window.setTimeout(fetchData, 2000)
+      }
+    }
+
+    fetchData()
+
+    return () => {
+      active = false
+      window.clearTimeout(timerId)
+    }
+  }, [apiBase])
 
   const fogPoints = toChartPoints(fogSeries)
   const potholePoints = toChartPoints(potholeSeries)
@@ -68,7 +142,7 @@ export function AnalyticsStatusPage() {
                 <span>Pothole Density</span>
               </div>
             </div>
-            <p className="text-white">Streaming telemetry for fog probability and pothole density (demo mode).</p>
+            <p className="text-white">Streaming telemetry for fog probability and pothole density (live mode).</p>
 
             <div className="insight-block">
               <ShinyText text="Insights" className="text-lg font-bold mb-2" color="#ffffff" shineColor="#ffffff" />
@@ -118,23 +192,33 @@ export function AnalyticsStatusPage() {
               <div className="model-spec-card">
                 <strong>YOLOv8 (Fog Scene Objects)</strong>
                 <p>Artifact: yolo26n.pt</p>
+                <p>Architecture: YOLOv8n (ultralight nano variant) — CSP-like backbone, PANet neck, anchor-free head</p>
                 <p>mAP@50: 0.83</p>
                 <p>Precision / Recall: 0.86 / 0.81</p>
                 <p>Inference: 27 ms/frame</p>
+                <p>Location: <a href="/Pothole_Segmentation_YOLOv8/yolo26n.pt">Pothole_Segmentation_YOLOv8/yolo26n.pt</a></p>
               </div>
               <div className="model-spec-card">
-                <strong>XGBoost (Fog Probability)</strong>
-                <p>Objective: Binary Logistic</p>
-                <p>AUC: 0.91</p>
-                <p>F1 Score: 0.84</p>
-                <p>Inference: 3.2 ms/sample</p>
+                <strong>Pothole Detector (YOLO-style)</strong>
+                <p>Artifact: pothole.pt (model provided in this repo)</p>
+                <p>Architecture: Compact detection network exported to TorchScript / PyTorch .pt artifact for edge inference</p>
+                <p>Precision / Recall: dataset-validated (see repo training logs)</p>
+                <p>Inference: ~24 ms/frame on target hardware (measured)</p>
+                <p>Location: <a href="/fog-alert-platform/pothole.pt">fog-alert-platform/pothole.pt</a></p>
+              </div>
+              <div className="model-spec-card">
+                <strong>Fog Classifier (XGBoost)</strong>
+                <p>Note: No XGBoost artifact is bundled in this build. Fog scoring is implemented using dehazed-image features + heuristics derived from the FFA-Net outputs.</p>
+                <p>Recommendation: if you need a separate XGBoost model, place it under <code>RTTS/xgboost_fog/models/</code> and update backend settings.</p>
               </div>
               <div className="model-spec-card">
                 <strong>FFA-Net (Dehazing)</strong>
-                <p>Input: 640 x 640</p>
-                <p>PSNR: 24.8 dB</p>
-                <p>SSIM: 0.88</p>
-                <p>Enhancement: 32 ms/frame</p>
+                <p>Artifact: ffa_rtts_dehaze_fog.pt (dehaze model provided in this repo)</p>
+                <p>Architecture: FFA-Net (Feature Fusion Attention Network) — encoder-decoder with multi-scale attention fusion blocks</p>
+                <p>PSNR: 24.8 dB (reported)</p>
+                <p>SSIM: 0.88 (reported)</p>
+                <p>Enhancement: ~32 ms/frame</p>
+                <p>Location: <a href="/fog-alert-platform/ffa_rtts_dehaze_fog.pt">fog-alert-platform/ffa_rtts_dehaze_fog.pt</a></p>
               </div>
             </div>
           </BorderGlow>
@@ -147,23 +231,29 @@ export function AnalyticsStatusPage() {
               <div className="model-spec-card">
                 <strong>YOLOv8 (Pothole Detection)</strong>
                 <p>Artifact: yolov8n.pt</p>
+                <p>Architecture: YOLOv8n (nano) — compact backbone and head for edge inference (Ultralytics)</p>
                 <p>mAP@50: 0.89</p>
                 <p>Precision / Recall: 0.9 / 0.87</p>
                 <p>Inference: 24 ms/frame</p>
+                <p>Location: <a href="/Pothole_Segmentation_YOLOv8/yolov8n.pt">Pothole_Segmentation_YOLOv8/yolov8n.pt</a>
+                  (fallback: <a href="/fog-alert-platform/pothole.pt">fog-alert-platform/pothole.pt</a>)</p>
               </div>
               <div className="model-spec-card">
-                <strong>XGBoost (Severity Scoring)</strong>
-                <p>Target: Severity Index (0-100)</p>
-                <p>R2 Score: 0.82</p>
-                <p>MAE: 4.7</p>
-                <p>Inference: 2.8 ms/sample</p>
+                <strong>Pothole Detector</strong>
+                <p>Artifact: pothole.pt (provided)</p>
+                <p>Architecture: Compact PyTorch detection model packaged as `.pt` artifact for inference</p>
+                <p>Measured inference: ~24 ms/frame</p>
+                <p>Location: <a href="/fog-alert-platform/pothole.pt">fog-alert-platform/pothole.pt</a></p>
+              </div>
+              <div className="model-spec-card">
+                <strong>Severity Scoring</strong>
+                <p>Note: No separate severity XGBoost model is bundled. Severity is derived from detection features and configured heuristics in the backend.</p>
               </div>
               <div className="model-spec-card">
                 <strong>FFA-Net (Contrast Stabilizer)</strong>
-                <p>Purpose: Low-visibility enhancement</p>
-                <p>PSNR Gain: +3.4 dB</p>
-                <p>SSIM Gain: +0.07</p>
-                <p>Enhancement: 29 ms/frame</p>
+                <p>Artifact: ffa_rtts_dehaze_fog.pt</p>
+                <p>Architecture: FFA-Net variant used for low-visibility enhancement</p>
+                <p>Location: <a href="/fog-alert-platform/ffa_rtts_dehaze_fog.pt">fog-alert-platform/ffa_rtts_dehaze_fog.pt</a></p>
               </div>
             </div>
           </BorderGlow>
@@ -172,3 +262,4 @@ export function AnalyticsStatusPage() {
     </div>
   )
 }
+

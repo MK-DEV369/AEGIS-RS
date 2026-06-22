@@ -1,7 +1,12 @@
 # 🌫️ Fog Alert Platform (AEGIS-RS Dashboard & Services)
 
 A modern full-stack intelligent road hazard monitoring system and ADAS (Advanced Driver Assistance Systems) telemetry dashboard. This platform combines a high-performance **Django REST API** backend running deep-learning inference pipelines with a polished **React TypeScript** frontend for live monitoring, interactive mapping, and alerts.
-
+Mapillary:
+AccessToken = "MLY|27414545538183818|19e82ee8fc36fccd34306a6c685a4ba9"
+ClientSecret = "MLY|27414545538183818|79d8f3aca168f4ae696b2bad27e0fe49"
+AuthorizationURL = "https://www.mapillary.com/connect?client_id=27414545538183818"
+AppName = "AEGIS-RS"
+Descritpion="Traffic Sign Dashboard"
 ---
 
 ## 📁 Repository Structure

@@ -85,12 +85,28 @@ def _extract_features_from_image(image: np.ndarray) -> dict[str, float]:
     }
 
 
-def extract_fog_features(image_path: Path, image_size: int = 256) -> dict[str, float] | None:
-    image = cv2.imread(str(image_path))
+def extract_fog_features(
+    image_array: np.ndarray | None = None,
+    image_path: Path | str | None = None,
+    image_size: int = 256
+) -> dict[str, float] | None:
+    """
+    Extract fog features from either an in-memory numpy array or a file path.
+    """
+    if image_array is not None:
+        image = image_array
+    elif image_path is not None:
+        image = cv2.imread(str(image_path))
+    else:
+        raise ValueError("Must provide either image_array or image_path")
+
     if image is None:
         return None
 
-    image = cv2.resize(image, (image_size, image_size), interpolation=cv2.INTER_AREA)
+    # Only resize if the dimensions don't already match to save CPU during real-time inference
+    if image.shape[0] != image_size or image.shape[1] != image_size:
+        image = cv2.resize(image, (image_size, image_size), interpolation=cv2.INTER_AREA)
+        
     return _extract_features_from_image(image)
 
 
@@ -127,7 +143,7 @@ def build_dataset(
         positive_paths = list(_iter_image_paths(positives_images_dir))
 
     for path in positive_paths:
-        features = extract_fog_features(path, image_size=image_size)
+        features = extract_fog_features(image_path=path, image_size=image_size)
         if features is None:
             continue
         row = {**features, "label": 1, "image_path": str(path)}
@@ -136,7 +152,7 @@ def build_dataset(
     negative_records: list[dict[str, float | int | str]] = []
     if negatives_dir is not None:
         for path in _iter_image_paths(negatives_dir):
-            features = extract_fog_features(path, image_size=image_size)
+            features = extract_fog_features(image_path=path, image_size=image_size)
             if features is None:
                 continue
             row = {**features, "label": 0, "image_path": str(path)}

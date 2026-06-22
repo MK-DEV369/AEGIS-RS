@@ -122,6 +122,30 @@ You should see:
   ➜  press h + enter to show help
 ```
 
+### Backend API Base URL (Important)
+
+Live monitoring calls Django APIs under `/api/...`. If those requests hit Vite instead of Django, you will see errors like:
+
+`Unexpected token '<', "<!doctype ..." is not valid JSON`
+
+This project now supports two safe options:
+
+1. Vite proxy (default in dev):
+- `vite.config.ts` proxies `/api` to `http://127.0.0.1:8000`
+
+2. Explicit backend base URL:
+- Create `frontend/.env.local` with:
+
+```bash
+VITE_BACKEND_BASE=http://127.0.0.1:8000
+```
+
+Optional custom proxy target:
+
+```bash
+VITE_DEV_BACKEND_PROXY_TARGET=http://127.0.0.1:8000
+```
+
 ### Navigating the App
 
 Once running, click the navigation links at the top:

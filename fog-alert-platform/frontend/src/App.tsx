@@ -21,9 +21,10 @@ const navItems = [
 function App() {
   const navigate = useNavigate()
   const location = useLocation()
+  const normalizedPath = location.pathname === '/video' ? '/monitoring' : location.pathname
   const activeNavIndex = Math.max(
     0,
-    navItems.findIndex((item) => item.to === location.pathname),
+    navItems.findIndex((item) => item.to === normalizedPath),
   )
 
   return (
@@ -59,6 +60,7 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/monitoring" element={<LiveMonitoringPage />} />
+          <Route path="/video" element={<LiveMonitoringPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/analytics" element={<AnalyticsStatusPage />} />
           <Route path="/live-map" element={<LiveMapPage />} />
