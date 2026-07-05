@@ -81,33 +81,43 @@ When the RSU receiver captures the broadcasted packets, it writes the telemetry 
 
 ---
 
-## 📡 Interactive V2I Simulation Loop
+## 📡 Interactive V2I2V Simulation Loop (3-ESP32 Setup)
 
-AEGIS-RS supports an end-to-end V2I (Vehicle-to-Infrastructure) simulation loop when both the Vehicle OBU ESP32 and the Road Side Unit (RSU) ESP32 are connected to the laptop. 
+AEGIS-RS supports a complete vehicle-to-infrastructure-to-vehicle (V2I2V) closed-loop simulation using three concurrent ESP32 devices connected to the laptop:
 
 ```
 [Frontend Map UI] --(POST Simulate API)--> [Django Backend]
                                                     |
-[Interactive Map] <--(Poll Telemetry Latest)-- [Python Relay] --(Serial POTHOLE/FOG)--> [Vehicle OBU ESP32]
+[Interactive Map] <--(Poll Telemetry Latest)-- [Python Relay] --(Serial POTHOLE/FOG)--> [OBU 1 (Transmitter)]
                                       ^             |                                        |
                                       |             | (Serial Ingest)                    (ESP-NOW)
                                       |             v                                        v
-                               [Django Telemetry] <---+------------------------------ [RSU ESP32 Receiver]
+                               [Django Telemetry] <---+------------------------------ [RSU ESP32 (Infrastructure)]
+                                      ^                                                      |
+                                      | (Serial Ingest)                                  (ESP-NOW)
+                                      +---------------------------------------------- [OBU 2 (Receiver)]
 ```
 
-### 1. Manual Simulation Endpoints
+### 1. Dynamic Port Role Classification
+The Python serial relay daemon (`esp32_relay.py`) dynamically detects and classifies the roles of the 3 connected ESP32 COM ports based on their serial output traffic, ensuring zero manual configuration is required when swapping USB ports:
+*   **OBU 1 (Transmitter)**: Assumed on connection. Outbound serial warnings (`POTHOLE:` or `FOG:`) are written only to this port.
+*   **RSU (Road Side Unit)**: Classified as `RSU` when it outputs JSON starting with `{"type":"RSU_`. Relay maps warning logs to status `DISSEMINATED`.
+*   **OBU 2 (Secondary Receiver)**: Classified as `OBU_RECEIVER` when it outputs JSON starting with `{"type":"OBU_`. Relay maps warnings to status `RECEIVED`.
+
+### 2. Manual Simulation Endpoints
 We provide manual API routes to simulate OBU hazard detections at specific GPS locations without requiring camera feeds:
 *   **Pothole Sim**: `POST /api/simulate/pothole/` (Payload: `lat`, `lng`, `severity`, `source_id`)
 *   **Fog Sim**: `POST /api/simulate/fog/` (Payload: `lat`, `lng`, `fog_level`, `risk_score`, `source_id`)
 
-### 2. Closed-Loop Ingestion Flow
+### 3. Closed-Loop Ingestion Flow
 1.  **Trigger Event**: In the frontend Live Map, enter coordinates (defaults to Kengeri test area `12.9242853, 77.4996733`) and trigger an alert.
-2.  **Relay transmission**: The python relay daemon detects the new database record and sends the command over serial to the **Vehicle ESP32 (Transmitter)**.
-3.  **Wireless Broadcast**: The Vehicle ESP32 broadcasts it over ESP-NOW.
-4.  **RSU Reception**: The **RSU ESP32 (Receiver)** receives the broadcast and outputs the disseminated JSON log:
-    `{"type":"RSU_Pothole","lat":12.924285,"lng":77.499673,"vehicle_id":"OBU-01","speed":35,"status":"DISSEMINATED"};`
-5.  **Relay Ingest**: The relay daemon intercepts this JSON on the RSU's serial port, parses it, and forwards it to the backend `/api/telemetry/ingest/` endpoint.
-6.  **Dynamic Rendering**: The frontend Leaflet map page pulls the latest telemetry and draws a violet/blue double-ringed warning marker representing a successfully disseminated V2I hazard alert!
+2.  **Relay transmission**: The python relay daemon writes the command over serial to the **Vehicle 1 (OBU 1) Transmitter** COM port.
+3.  **Wireless Broadcast**: OBU 1 broadcasts it wirelessly over ESP-NOW.
+4.  **RSU Capture**: The **RSU ESP32** receives the broadcast, prints RSU JSON log (`{"type":"RSU_Pothole",...};`), and rebroadcasts it.
+5.  **Vehicle 2 Capture**: The **OBU 2 ESP32** receives the rebroadcast and logs its own OBU JSON log:
+    `{"type":"OBU_Pothole","lat":12.924285,"lng":77.499673,"vehicle_id":"OBU-02","speed":30,"status":"RECEIVED"};`
+6.  **Relay Ingest**: The relay daemon intercepts both logs, parses them, and POSTs them to `/api/telemetry/ingest/`.
+7.  **Dynamic Map Rendering**: The frontend map draws a violet marker for the RSU and an amber/orange marker for the receiving OBU 2 vehicle, illustrating complete V2I2V alert delivery.
 
 ---
 
@@ -118,5 +128,5 @@ To run the full stack (React frontend, Django backend, and ESP32 relay daemon):
 2.  The script will automatically check directory paths, activate the virtual environment, and spin up three separate CMD consoles to run:
     *   **Django Server**: `http://127.0.0.1:8000`
     *   **React Frontend (Vite)**: `http://localhost:5173`
-    *   **ESP32 Relay Daemon**: Automatically connects to all active serial COM ports (e.g. COM4 and COM5).
+    *   **ESP32 Relay Daemon**: Automatically connects to all active serial COM ports (e.g. COM4, COM5, and COM6).
 3.  Navigate to `/live-map` in the browser, trigger simulated alerts from the sidebar panel, and watch the warnings populate in real-time.

@@ -3,6 +3,7 @@ import { Circle, CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaf
 import BorderGlow from '@/components/BorderGlow'
 import ShinyText from '@/components/ShinyText'
 import { useEffect, useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 
 function AreaChart({ data, color, gradientId }: { data: number[], color: string, gradientId: string }) {
   const width = 500
@@ -63,7 +64,7 @@ function AreaChart({ data, color, gradientId }: { data: number[], color: string,
   )
 }
 
-const mapCenter: [number, number] = [12.9716, 77.5946]
+const mapCenter: [number, number] = [12.9242853, 77.4996733]
 
 export function DashboardPage() {
   const [apiBase] = useState(() => {
@@ -84,6 +85,10 @@ export function DashboardPage() {
 
   const [latestFog, setLatestFog] = useState<any>(null)
   const [latestPothole, setLatestPothole] = useState<any>(null)
+  
+  const [potholesList, setPotholesList] = useState<any[]>([])
+  const [fogList, setFogList] = useState<any[]>([])
+  const [telemetryList, setTelemetryList] = useState<any[]>([])
   
   const [riskHistory, setRiskHistory] = useState<number[]>([0.65, 0.68, 0.72, 0.70, 0.73, 0.75, 0.72])
   const [fogHistory, setFogHistory] = useState<number[]>([0.70, 0.72, 0.75, 0.74, 0.76, 0.78, 0.78])
@@ -114,14 +119,16 @@ export function DashboardPage() {
         const response = await fetch(fogStatusUrl)
         const payload = await parseJsonResponse(response, fogStatusUrl)
         const items = payload.items || []
-        if (items.length > 0 && active) {
-          const latest = items[0]
-          setLatestFog(latest)
-          currentFogProb = Number(latest.fog_probability ?? 0.78)
-          currentRisk = Number(latest.risk_score ?? 0.72)
-          hasFog = true
-          
-          setFogHistory(prev => [...prev, currentFogProb].slice(-10))
+        if (active) {
+          setFogList(items)
+          if (items.length > 0) {
+            const latest = items[0]
+            setLatestFog(latest)
+            currentFogProb = Number(latest.fog_probability ?? 0.78)
+            currentRisk = Number(latest.risk_score ?? 0.72)
+            hasFog = true
+            setFogHistory(prev => [...prev, currentFogProb].slice(-10))
+          }
         }
       } catch (err) {
         console.error('Failed to fetch fog status on dashboard', err)
@@ -133,15 +140,31 @@ export function DashboardPage() {
         const response = await fetch(potholeStatusUrl)
         const payload = await parseJsonResponse(response, potholeStatusUrl)
         const items = payload.items || []
-        if (items.length > 0 && active) {
-          const latest = items[0]
-          setLatestPothole(latest)
-          if (!hasFog && latest.pothole_metrics?.max_risk) {
-            currentRisk = Number(latest.pothole_metrics.max_risk)
+        if (active) {
+          setPotholesList(items)
+          if (items.length > 0) {
+            const latest = items[0]
+            setLatestPothole(latest)
+            if (!hasFog && latest.pothole_metrics?.max_risk) {
+              currentRisk = Number(latest.pothole_metrics.max_risk)
+            }
           }
         }
       } catch (err) {
         console.error('Failed to fetch pothole status on dashboard', err)
+      }
+
+      // 3. Fetch Telemetry status
+      const telUrl = withBase('/api/telemetry/latest/')
+      try {
+        const response = await fetch(telUrl)
+        const payload = await parseJsonResponse(response, telUrl)
+        const items = payload.items || []
+        if (active) {
+          setTelemetryList(items)
+        }
+      } catch (err) {
+        console.error('Failed to fetch telemetry on dashboard', err)
       }
 
       if (active) {
@@ -158,13 +181,24 @@ export function DashboardPage() {
     }
   }, [apiBase])
 
-  const compositeRiskScore = latestFog?.risk_score ?? (latestPothole?.pothole_metrics?.max_risk ?? 0.72)
-  const riskValueStr = `${Math.round(compositeRiskScore * 100)} / 100`
-  const fogLevelStr = latestFog?.fog_level ? latestFog.fog_level.charAt(0).toUpperCase() + latestFog.fog_level.slice(1).toLowerCase() : 'Moderate'
-  const visibilityStr = latestFog?.visibility_meters ? `${Math.round(latestFog.visibility_meters)} m` : '80 m'
-  
-  const potholeCountVal = latestPothole?.pothole_count ?? 0
-  const activeAlertsStr = latestPothole ? String(potholeCountVal) : '5'
+  const compositeRiskScore = latestFog?.risk_score != null
+    ? latestFog.risk_score
+    : latestPothole?.pothole_metrics?.max_risk != null
+      ? latestPothole.pothole_metrics.max_risk
+      : null
+  const riskValueStr = compositeRiskScore != null ? `${Math.round(compositeRiskScore * 100)} / 100` : '—'
+
+  const fogLevelStr = latestFog?.fog_level
+    ? latestFog.fog_level.charAt(0).toUpperCase() + latestFog.fog_level.slice(1).toLowerCase()
+    : '—'
+
+  const visibilityStr = latestFog?.visibility_meters != null
+    ? `${Math.round(latestFog.visibility_meters)} m`
+    : '—'
+
+  const activeAlertsStr = latestPothole?.pothole_count != null
+    ? String(latestPothole.pothole_count)
+    : '—'
 
   const kpis = [
     { label: 'Risk Score', value: riskValueStr },
@@ -186,7 +220,7 @@ export function DashboardPage() {
     }
   }, [latestFog, latestPothole])
 
-  const fogProbDisplay = latestFog?.fog_probability ? latestFog.fog_probability.toFixed(3) : '0.78'
+  const fogProbDisplay = latestFog?.fog_probability != null ? latestFog.fog_probability.toFixed(3) : '—'
 
   const detectionsInfo = useMemo(() => {
     const detections = latestPothole?.detections
@@ -228,43 +262,101 @@ export function DashboardPage() {
       <section className="grid dashboard-main">
         <motion.article
           className="map-panel"
+          style={{ display: 'flex' }}
           initial={{ opacity: 0, x: -18 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true, amount: 0.3 }}
           transition={{ duration: 0.45 }}
         >
-          <BorderGlow className="panel glass">
-            <ShinyText text="Interactive Map" className="text-xl font-bold mb-3" color="#ffffff" shineColor="#ffffff" />
-            <div className="map-canvas">
-              <div className="leaflet-shell">
-                <MapContainer center={mapCenter} zoom={13} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
+          <BorderGlow className="panel glass" style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <ShinyText text="Interactive Map" className="text-xl font-bold" color="#ffffff" shineColor="#ffffff" />
+              <Link to="/live-map" style={{ color: '#3b82f6', fontSize: '0.85em', fontWeight: 'bold', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                For more details, click here ↗
+              </Link>
+            </div>
+            <div className="map-canvas" style={{ flex: 1, minHeight: '480px', display: 'flex', flexDirection: 'column' }}>
+              <div className="leaflet-shell" style={{ flex: 1 }}>
+                <MapContainer center={mapCenter} zoom={15} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
 
-                  <Circle center={[12.9697, 77.5972]} radius={350} pathOptions={{ color: '#22c55e', fillOpacity: 0.2 }}>
-                    <Popup>Fog Cluster: Moderate Visibility Drop</Popup>
-                  </Circle>
+                  {/* Dynamic Potholes */}
+                  {potholesList.map((item) => {
+                    const lat = item.coordinates?.lat
+                    const lng = item.coordinates?.lng
+                    if (!lat || !lng) return null
+                    return (
+                      <CircleMarker
+                        key={`pot-${item.id}`}
+                        center={[lat, lng]}
+                        radius={8}
+                        pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.7 }}
+                      >
+                        <Popup>
+                          <div style={{ color: '#000' }}>
+                            <strong>⚠️ Dynamic Pothole Alert</strong><br />
+                            Severity: {item.pothole_metrics?.worst_severity || 'MEDIUM'}<br />
+                            GPS: {lat.toFixed(6)}, {lng.toFixed(6)}
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+                    )
+                  })}
 
-                  <CircleMarker center={[12.9741, 77.589]} radius={8} pathOptions={{ color: '#ef4444' }}>
-                    <Popup>Pothole Zone A</Popup>
-                  </CircleMarker>
-                  <CircleMarker center={[12.9684, 77.601]} radius={8} pathOptions={{ color: '#ef4444' }}>
-                    <Popup>Pothole Zone B</Popup>
-                  </CircleMarker>
+                  {/* Dynamic Fog Zones */}
+                  {fogList.map((item) => {
+                    const lat = item.coordinates?.lat
+                    const lng = item.coordinates?.lng
+                    if (!lat || !lng) return null
+                    const radius = item.visibility_meters ? Math.max(100, 300 - item.visibility_meters) : 250
+                    return (
+                      <Circle
+                        key={`fog-${item.request_id || item.updated_at}`}
+                        center={[lat, lng]}
+                        radius={radius}
+                        pathOptions={{ color: '#10b981', fillColor: '#10b981', fillOpacity: 0.2 }}
+                      >
+                        <Popup>
+                          <div style={{ color: '#000' }}>
+                            <strong>🌫️ Fog Hazard Cluster</strong><br />
+                            Level: {item.fog_level || 'MEDIUM'}<br />
+                            Visibility: {item.visibility_meters?.toFixed(0)}m<br />
+                            Risk Index: {item.risk_score?.toFixed(2)}
+                          </div>
+                        </Popup>
+                      </Circle>
+                    )
+                  })}
 
-                  <CircleMarker center={[12.977, 77.5968]} radius={7} pathOptions={{ color: '#3b82f6' }}>
-                    <Popup>Traffic Sign Region</Popup>
-                  </CircleMarker>
-
-                  <CircleMarker center={[12.9669, 77.5925]} radius={7} pathOptions={{ color: '#f59e0b' }}>
-                    <Popup>Road Hump Section</Popup>
-                  </CircleMarker>
-
-                  <Circle center={[12.9716, 77.5946]} radius={800} pathOptions={{ color: '#a855f7', fillOpacity: 0.14 }}>
-                    <Popup>Composite Risk Heat Zone</Popup>
-                  </Circle>
+                  {/* Dynamic Telemetry RSU/OBU Warnings */}
+                  {telemetryList.map((item) => {
+                    const lat = item.lat
+                    const lng = item.lng
+                    if (!lat || !lng) return null
+                    const isObu = item.event?.startsWith('OBU_')
+                    const isPothole = item.event === 'RSU_Pothole' || item.event === 'OBU_Pothole'
+                    const markerColor = isObu ? (isPothole ? '#d97706' : '#ea580c') : (isPothole ? '#8b5cf6' : '#2563eb')
+                    
+                    return (
+                      <CircleMarker
+                        key={`tel-${item.source_id || item.updated_at}`}
+                        center={[lat, lng]}
+                        radius={10}
+                        pathOptions={{ color: markerColor, fillColor: markerColor, fillOpacity: 0.8, weight: 2, dashArray: '2, 2' }}
+                      >
+                        <Popup>
+                          <div style={{ color: '#000' }}>
+                            <strong>{isObu ? '🚗 Vehicle OBU Active Warning' : '📡 RSU Disseminating Node'}</strong><br />
+                            Hazard: {isPothole ? 'POTHOLE' : 'FOG'}<br />
+                            Speed: {item.speed_kmph} km/h
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+                    )
+                  })}
                 </MapContainer>
               </div>
             </div>
@@ -292,6 +384,26 @@ export function DashboardPage() {
               <p>Detected Objects: {detectionsInfo.objects}</p>
               <p>Confidence: {detectionsInfo.confidence}</p>
             </div>
+            
+            <div className="insight-block" style={{ borderLeft: '3px solid #a855f7', background: 'rgba(168,85,247,0.03)' }}>
+              <ShinyText text="AI Explainability (XAI)" className="text-md font-bold mb-1" color="#ffffff" shineColor="#ffffff" />
+              <p style={{ fontSize: '0.8em', lineHeight: '1.4', opacity: 0.9 }}>
+                <strong>XGBoost Model:</strong> Evaluates ambient parameters (Lux, Humidity, Temp) and OBU speed to compute real-time collision probability.
+              </p>
+              <p style={{ fontSize: '0.8em', lineHeight: '1.4', opacity: 0.9, marginTop: '4px' }}>
+                <strong>YOLOv8 CNN:</strong> Inspects high-fps camera frames, assigning confidence scores for pothole presence and size classifications.
+              </p>
+            </div>
+            
+            <div className="insight-block" style={{ borderLeft: '3px solid #f59e0b', background: 'rgba(245,158,11,0.03)' }}>
+              <ShinyText text="Data Expiration & Decay (TTL)" className="text-md font-bold mb-1" color="#ffffff" shineColor="#ffffff" />
+              <p style={{ fontSize: '0.8em', lineHeight: '1.4', opacity: 0.9 }}>
+                <strong>The "Fixed Pothole" Scenario:</strong> If a pothole is filled or fog dissipates, the warnings do not persist forever.
+              </p>
+              <p style={{ fontSize: '0.8em', lineHeight: '1.4', opacity: 0.9, marginTop: '4px' }}>
+                <strong>State Expiration (TTL):</strong> Active warnings decay over time (e.g., 2 hours for potholes, 10 minutes for fog). If subsequent vehicle vision sweeps report a clear road at flagged coordinates, the warning is immediately invalidated in the database.
+              </p>
+            </div>
           </BorderGlow>
         </motion.aside>
       </section>
@@ -306,8 +418,24 @@ export function DashboardPage() {
         >
           <BorderGlow className="panel glass">
             <ShinyText text="Risk Over Time" className="text-xl font-bold mb-3" color="#ffffff" shineColor="#ffffff" />
-            <div className="fake-chart" style={{ height: '150px', background: 'transparent' }}>
-              <AreaChart data={riskHistory} color="#3b82f6" gradientId="riskGrad" />
+            <div className="fake-chart" style={{ height: '170px', background: 'transparent', display: 'flex', gap: '8px', padding: '8px', boxSizing: 'border-box' }}>
+              {/* Y-Axis Label */}
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '120px', fontSize: '10px', color: 'rgba(255,255,255,0.6)', padding: '6px 0', width: '32px', textAlign: 'right' }}>
+                <span>100%</span>
+                <span>50%</span>
+                <span>0%</span>
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ height: '120px' }}>
+                  <AreaChart data={riskHistory} color="#3b82f6" gradientId="riskGrad" />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'rgba(255,255,255,0.5)', padding: '0 8px' }}>
+                  <span>18s ago</span>
+                  <span>12s ago</span>
+                  <span>6s ago</span>
+                  <span>Now</span>
+                </div>
+              </div>
             </div>
           </BorderGlow>
         </motion.article>
@@ -321,8 +449,24 @@ export function DashboardPage() {
         >
           <BorderGlow className="panel glass">
             <ShinyText text="Fog Prediction Trend" className="text-xl font-bold mb-3" color="#ffffff" shineColor="#ffffff" />
-            <div className="fake-chart" style={{ height: '150px', background: 'transparent' }}>
-              <AreaChart data={fogHistory} color="#a855f7" gradientId="fogGrad" />
+            <div className="fake-chart" style={{ height: '170px', background: 'transparent', display: 'flex', gap: '8px', padding: '8px', boxSizing: 'border-box' }}>
+              {/* Y-Axis Label */}
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '120px', fontSize: '10px', color: 'rgba(255,255,255,0.6)', padding: '6px 0', width: '32px', textAlign: 'right' }}>
+                <span>100%</span>
+                <span>50%</span>
+                <span>0%</span>
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ height: '120px' }}>
+                  <AreaChart data={fogHistory} color="#a855f7" gradientId="fogGrad" />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'rgba(255,255,255,0.5)', padding: '0 8px' }}>
+                  <span>18s ago</span>
+                  <span>12s ago</span>
+                  <span>6s ago</span>
+                  <span>Now</span>
+                </div>
+              </div>
             </div>
           </BorderGlow>
         </motion.article>

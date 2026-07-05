@@ -497,7 +497,7 @@ class PotholeCameraProcessView(APIView):
 		return Response(output, status=status.HTTP_200_OK)
 
 
-def _fetch_camera_bytes(camera_base: str, path_candidates=('/shot.jpg', '/latest.jpg', '/image.jpg'), timeout=5, user_agent='AEGIS-Backend/1.0'):
+def _fetch_camera_bytes(camera_base: str, path_candidates=('', '/shot.jpg', '/latest.jpg', '/image.jpg'), timeout=5, user_agent='AEGIS-Backend/1.0'):
     camera_base = (camera_base or '').rstrip('/')
     for path in path_candidates:
         url = camera_base + path
@@ -845,9 +845,34 @@ class CombinedCameraStartPollingView(APIView):
 				logger.info('Started combined polling loop for pothole_source=%s fog_source=%s camera=%s interval=%s', pothole_source_id, fog_source_id, camera_base, interval)
 				if laptop_coords:
 					logger.info('Combined Polling: using laptop browser GPS: %s', laptop_coords)
+				
+				is_local_webcam = camera_base.isdigit()
+				cap = None
+				if is_local_webcam:
+					try:
+						import cv2
+						cap = cv2.VideoCapture(int(camera_base))
+						logger.info('Combined Polling: Opened local webcam index %s', camera_base)
+					except Exception:
+						logger.exception('Combined Polling: Failed to open local webcam index %s', camera_base)
+
 				while not stop_event.is_set():
 					request_id = str(uuid.uuid4())
-					shot = _fetch_camera_bytes(camera_base)
+					shot = None
+					if is_local_webcam:
+						if cap and cap.isOpened():
+							try:
+								import cv2
+								ok, frame = cap.read()
+								if ok and frame is not None:
+									ok_enc, buf = cv2.imencode('.jpg', frame)
+									if ok_enc:
+										shot = buf.tobytes()
+							except Exception as e:
+								logger.warning('Combined Polling: Failed to read from webcam: %s', e)
+					else:
+						shot = _fetch_camera_bytes(camera_base)
+
 					if shot is None:
 						runtime_state.update_source(source_id=pothole_source_id, mode='combined_camera_poll', request_id=request_id, latency_ms=0.0, status_text='no_frame')
 						runtime_state.update_source(source_id=fog_source_id, mode='combined_camera_poll', request_id=request_id, latency_ms=0.0, status_text='no_frame')
@@ -859,6 +884,9 @@ class CombinedCameraStartPollingView(APIView):
 						runtime_state.update_source(source_id=fog_source_id, mode='combined_camera_poll', request_id=request_id, latency_ms=latency, status_text='ok')
 						logger.debug('Combined Polling: processed frame for camera=%s latency=%.2fms', camera_base, latency)
 					stop_event.wait(interval)
+				
+				if cap:
+					cap.release()
 				logger.info('Stopping combined polling loop for camera=%s', camera_base)
 
 			thread = threading.Thread(target=_poll_loop, daemon=True)

@@ -70,6 +70,7 @@ def main():
     last_sent_fog_level = None
     last_sent_fog_time = 0.0
     open_connections = {}
+    port_roles = {}  # {port: 'TRANSMITTER' | 'RSU' | 'OBU_RECEIVER'}
     
     last_scan_time = 0
     
@@ -90,6 +91,7 @@ def main():
                     except Exception:
                         pass
                     del open_connections[port]
+                    port_roles.pop(port, None)
             
             # Open newly connected ports
             for port in available_ports:
@@ -100,7 +102,8 @@ def main():
                         # Allow ESP32 reset time
                         time.sleep(1.5)
                         open_connections[port] = ser
-                        print(f"[+] COM port {port} successfully connected.")
+                        port_roles[port] = 'TRANSMITTER'
+                        print(f"[+] COM port {port} successfully connected. Assigned initial role TRANSMITTER.")
                     except Exception as e:
                         print(f"[!] Failed to open port {port}: {e}")
                         
@@ -111,42 +114,59 @@ def main():
                     line = ser.readline().decode("utf-8", errors="ignore").strip()
                     if line:
                         print(f"[{port} ESP32] {line}")
-                        # Check if line is from RSU Receiver and formatted as JSON
-                        # Expected: {"type":"RSU_Pothole","lat":...,"lng":...,"vehicle_id":"OBU-01","speed":35,"status":"DISSEMINATED"};
+                        # Check if line is from RSU/OBU Receiver and formatted as JSON
+                        # Expected: {"type":"RSU_Pothole" or "OBU_Pothole", "lat":..., "lng":...};
                         if line.startswith('{"type":') and line.endswith('};'):
                             json_str = line.rstrip(';').strip()
                             try:
                                 data = json.loads(json_str)
-                                print(f"[+] Parsed RSU disseminated alert from {port}: {data}")
+                                event_type = data.get("type", "RSU_Pothole")
+                                lat = float(data.get("lat", 0.0))
+                                lng = float(data.get("lng", 0.0))
+                                
+                                # Classify port dynamically based on JSON message prefix
+                                if event_type.startswith("RSU_"):
+                                    if port_roles.get(port) != 'RSU':
+                                        port_roles[port] = 'RSU'
+                                        print(f"[*] Port {port} dynamically classified as RSU Receiver.")
+                                    dynamic_source = f"RSU_{event_type}_{lat:.6f}_{lng:.6f}"
+                                    payload_status = data.get("status", "DISSEMINATED")
+                                    speed = float(data.get("speed", 35.0))
+                                elif event_type.startswith("OBU_"):
+                                    if port_roles.get(port) != 'OBU_RECEIVER':
+                                        port_roles[port] = 'OBU_RECEIVER'
+                                        print(f"[*] Port {port} dynamically classified as OBU Receiver.")
+                                    dynamic_source = f"OBU2_{event_type}_{lat:.6f}_{lng:.6f}"
+                                    payload_status = data.get("status", "RECEIVED")
+                                    speed = float(data.get("speed", 30.0))
+                                else:
+                                    dynamic_source = f"UNK_{event_type}_{lat:.6f}_{lng:.6f}"
+                                    payload_status = data.get("status", "UNKNOWN")
+                                    speed = 0.0
+                                    
+                                print(f"[+] Parsed alert from {port} ({port_roles[port]}): {data}")
                                 
                                 # POST to telemetry ingest endpoint
                                 ingest_url = f"{base_url}/api/telemetry/ingest/"
-                                lat = float(data.get("lat", 0.0))
-                                lng = float(data.get("lng", 0.0))
-                                event_type = data.get("type", "RSU_Pothole")
-                                
-                                # Use dynamic source_id to prevent overwriting different events/locations
-                                dynamic_source = f"RSU_{event_type}_{lat:.6f}_{lng:.6f}"
-                                
                                 payload = {
                                     "source_id": dynamic_source,
                                     "lat": lat,
                                     "lng": lng,
-                                    "speed_kmph": float(data.get("speed", 35.0)),
+                                    "speed_kmph": speed,
                                     "event": event_type,
-                                    "status": data.get("status", "DISSEMINATED"),
+                                    "status": payload_status,
                                     "device_ts": int(time.time()),
                                     "seq": 1
                                 }
                                 
-                                print(f"[*] Posting RSU telemetry to backend: {payload}")
+                                print(f"[*] Posting telemetry to backend: {payload}")
                                 ingest_response = requests.post(ingest_url, json=payload, timeout=2)
                                 if ingest_response.status_code == 200:
-                                    print(f"[+] Successfully registered RSU alert on backend.")
+                                    print(f"[+] Successfully registered telemetry alert on backend.")
                                 else:
-                                    print(f"[!] Failed to ingest RSU alert: HTTP {ingest_response.status_code}")
+                                    print(f"[!] Failed to ingest telemetry alert: HTTP {ingest_response.status_code}")
                             except Exception as parse_err:
-                                print(f"[!] Failed to parse RSU JSON: {parse_err}")
+                                print(f"[!] Failed to parse receiver JSON: {parse_err}")
             except Exception as e:
                 print(f"[!] Error reading serial from {port}: {e}")
                 
@@ -160,44 +180,41 @@ def main():
                 if items:
                     latest = items[0]
                     latest_id = latest.get("id")
-                    current_total = int(latest.get("total_potholes", 0))
                     
-                    # Initialize last_processed_total_potholes and last_processed_id on startup
-                    if last_processed_total_potholes is None:
-                        last_processed_total_potholes = current_total
+                    # Initialize last_processed_id on startup
+                    if last_processed_id is None:
                         last_processed_id = latest_id
-                        print(f"[*] Initialized pothole tracking: latest_id={latest_id}, total_potholes={current_total}")
+                        print(f"[*] Initialized pothole tracking: latest_id={latest_id}")
                     
-                    # Process new detections only if total_potholes has incremented (meaning a new unique pothole is detected)
-                    elif current_total > last_processed_total_potholes:
-                        pothole_count = latest.get("pothole_count", 0)
-                        source_id = latest.get("source_id", "unknown_source")
-                        coords = latest.get("coordinates") or {}
-                        lat = float(coords.get("lat") or 0.0)
-                        lng = float(coords.get("lng") or 0.0)
-                        
-                        severity = get_worst_severity(latest)
-                        
-                        # Build protocol message: POTHOLE:severity,lat,lng,count,source
-                        msg = f"POTHOLE:{severity},{lat:.6f},{lng:.6f},{pothole_count},{source_id}\n"
-                        
-                        print(f"\n[EVENT] New UNIQUE pothole detected! total_potholes increased from {last_processed_total_potholes} to {current_total}. count={pothole_count}")
-                        last_processed_total_potholes = current_total
-                        last_processed_id = latest_id
-                        
-                        if not open_connections:
-                            print(f"[!] No ESP32 COM ports connected. Output: {msg.strip()}")
-                        else:
-                            for port, ser in open_connections.items():
-                                try:
-                                    ser.write(msg.encode("utf-8"))
-                                    print(f"[*] Sent to {port} -> {msg.strip()}")
-                                except Exception as e:
-                                    print(f"[!] Failed to write to {port}: {e}")
-                    
-                    # Fallback update to keep last_processed_id fresh even if no new unique potholes
+                    # Process new detections if the frame is newer (id changed)
                     elif latest_id != last_processed_id:
                         last_processed_id = latest_id
+                        pothole_count = latest.get("pothole_count", 0)
+                        
+                        if pothole_count > 0:
+                            source_id = latest.get("source_id", "unknown_source")
+                            coords = latest.get("coordinates") or {}
+                            lat = float(coords.get("lat") or 0.0)
+                            lng = float(coords.get("lng") or 0.0)
+                            
+                            severity = get_worst_severity(latest)
+                            
+                            # Build protocol message: POTHOLE:severity,lat,lng,count,source
+                            msg = f"POTHOLE:{severity},{lat:.6f},{lng:.6f},{pothole_count},{source_id}\n"
+                            
+                            print(f"\n[EVENT] Pothole detected in frame! count={pothole_count} severity={severity}")
+                            
+                            if not open_connections:
+                                print(f"[!] No ESP32 COM ports connected. Output: {msg.strip()}")
+                            else:
+                                for port, ser in open_connections.items():
+                                    if port_roles.get(port, 'TRANSMITTER') != 'TRANSMITTER':
+                                        continue
+                                    try:
+                                        ser.write(msg.encode("utf-8"))
+                                        print(f"[*] Sent to {port} ({port_roles[port]}) -> {msg.strip()}")
+                                    except Exception as e:
+                                        print(f"[!] Failed to write to {port}: {e}")
             else:
                 print(f"[!] Backend pothole status request failed ({response.status_code})")
         except requests.exceptions.RequestException as e:
@@ -256,9 +273,11 @@ def main():
                                 print(f"[!] No ESP32 COM ports connected. Output: {msg.strip()}")
                             else:
                                 for port, ser in open_connections.items():
+                                    if port_roles.get(port, 'TRANSMITTER') != 'TRANSMITTER':
+                                        continue
                                     try:
                                         ser.write(msg.encode("utf-8"))
-                                        print(f"[*] Sent to {port} -> {msg.strip()}")
+                                        print(f"[*] Sent to {port} ({port_roles[port]}) -> {msg.strip()}")
                                     except Exception as e:
                                         print(f"[!] Failed to write to {port}: {e}")
             else:

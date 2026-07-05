@@ -177,7 +177,7 @@ class Dehazer:
 
         checkpoint = torch.load(self.model_path, map_location="cpu")
         state_dict = checkpoint.get("model_state_dict", checkpoint)
-        head_weight = state_dict.get("head.0.weight") or state_dict.get("head.weight")
+        head_weight = state_dict.get("head.0.weight") if state_dict.get("head.0.weight") is not None else state_dict.get("head.weight")
         if head_weight is None:
             self._load_error = "Dehazing checkpoint is missing head weights"
             self._enabled = False
@@ -1281,7 +1281,6 @@ class FogPredictor:
             fog_prob = 0.7 * xgb_prob + 0.3 * neural_fog_prob
         else:
             fog_prob = xgb_prob
-        pred = int(fog_prob >= 0.5)
 
         # Apply temporal smoothing if source_id provided
         smoothed_fog_prob = fog_prob
@@ -1290,9 +1289,25 @@ class FogPredictor:
 
         # Calculate additional features
         contrast = self._calculate_contrast(dehazed_bgr)
-        visibility = self._calculate_visibility(contrast)
-        fog_level = self._classify_fog_level(smoothed_fog_prob)
-        risk_score = self._calculate_risk_score(smoothed_fog_prob, visibility)
+
+        # Gentle contrast-based correction:
+        # Foggy scenes have LOW contrast  (< 0.35) → no suppression at all
+        # Ambiguous scenes               (0.35–0.65) → slight suppression
+        # Clearly lit / non-foggy scenes (> 0.65) → stronger suppression
+        # Uses a smooth sigmoid so transitions are gradual, not a hard cut-off.
+        import math
+        # Sigmoid centred at contrast=0.60, steepness=12
+        suppression = 1.0 / (1.0 + math.exp(-12.0 * (contrast - 0.60)))
+        # suppression ≈ 0 when contrast is low (keep probability intact)
+        # suppression ≈ 1 when contrast is high (reduce probability)
+        calibration_multiplier = 1.0 - (0.75 * suppression)  # max reduction = 75%
+        smoothed_fog_prob = max(0.0, smoothed_fog_prob * calibration_multiplier)
+        fog_prob           = max(0.0, fog_prob           * calibration_multiplier)
+
+        pred        = int(smoothed_fog_prob >= 0.5)
+        visibility  = self._calculate_visibility(contrast)
+        fog_level   = self._classify_fog_level(smoothed_fog_prob)
+        risk_score  = self._calculate_risk_score(smoothed_fog_prob, visibility)
 
         if settings.PIPELINE_DEBUG_LOGS:
             logger.debug(
@@ -1531,6 +1546,13 @@ class FogPredictor:
         stream_id: str | None = None,
     ) -> dict[str, object]:
         started = time.perf_counter()
+        if not coordinates:
+            coordinates = {
+                "lat": 12.9242853,
+                "lng": 77.4996733,
+                "accuracy_m": 15.0,
+                "location_source": "default_test_site"
+            }
         bgr = self._decode_image(image_bytes)
         prepared_bgr, realtime_meta = self._prepare_realtime_frame(bgr, realtime=realtime)
         if realtime and settings.REALTIME_SKIP_DEHAZE:

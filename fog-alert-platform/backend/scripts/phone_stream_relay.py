@@ -141,7 +141,11 @@ def parse_args() -> RelayConfig:
 
 
 def open_camera(stream_url: str) -> cv2.VideoCapture:
-    capture = cv2.VideoCapture(stream_url)
+    try:
+        source = int(stream_url)
+    except ValueError:
+        source = stream_url
+    capture = cv2.VideoCapture(source)
     if not capture.isOpened():
         raise RuntimeError(f"Could not open stream: {stream_url}")
     return capture

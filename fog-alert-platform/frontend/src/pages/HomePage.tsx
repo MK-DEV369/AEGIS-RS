@@ -9,6 +9,8 @@ const objectives = [
   'Unify fog prediction, pothole detection, and GPS sensor context into one decision pipeline.',
   'Track source health, latency, and request consistency for operational reliability.',
   'Generate actionable risk alerts that are immediately useful during field demos.',
+  'Broadcast real-time hazard notifications wirelessly via ESP-NOW to roadside infrastructure (RSU).',
+  'Simulate and visualize vehicle-to-infrastructure (V2I) warning dissemination on interactive map overlays.',
 ]
 
 const architecture = [
@@ -28,6 +30,10 @@ const architecture = [
     title: 'Risk and Monitoring Layer',
     detail: 'Combined outputs, latency metrics, GPS context, and source status drive explainable risk monitoring.',
   },
+  {
+    title: 'V2I Dissemination Layer',
+    detail: 'Serial relay daemon routes warnings to Vehicle ESP32 which broadcasts via ESP-NOW to RSU receivers, logging back to telemetry.',
+  },
 ]
 
 const methodologies = [
@@ -36,13 +42,14 @@ const methodologies = [
   'Robust streaming protocol: direct image ingest plus chunked transfer support for unstable networks.',
   'Observability loop: request IDs, source-level counters, and runtime cache management for rapid debugging.',
   'Edge demo readiness: GPS sensor ingest integrated alongside vision inference.',
+  'V2X closed-loop simulation: manual alert triggers, hardware transceivers, and automated serial-to-REST telemetry ingestion.',
 ]
 
 const team = [
   { name: 'Ahibhruth A', usn: '1RV23AI011', branch: 'AIML' },
   { name: 'L Moryakantha', usn: '1RV24AI406', branch: 'AIML' },
-  { name: 'Pavan', usn: '1RV23EC196', branch: 'ECE' },
-  { name: 'Srivatsa', usn: '1RV23ET050', branch: 'ETE' },
+  { name: 'Pavan S Aradhya', usn: '1RV23EC196', branch: 'ECE' },
+  { name: 'Srivatsa B Janadri', usn: '1RV23ET050', branch: 'ETE' },
 ]
 
 const stackGroups = [
@@ -59,8 +66,8 @@ const stackGroups = [
     items: ['React', 'TypeScript', 'Framer Motion', 'shadcn + Tailwind CSS'],
   },
   {
-    title: 'Realtime and Devices',
-    items: ['GPS Sensor Feed', 'IP Webcam Relay', 'Chunked Upload Protocol', 'Runtime Source Monitoring'],
+    title: 'Realtime and V2X Devices',
+    items: ['ESP32 Dev Modules', 'ESP-NOW Broadcasts', 'Serial Relay Daemon', 'GPS Sensor Ingest', 'Leaflet Map Layers'],
   },
 ]
 
@@ -217,6 +224,10 @@ export function HomePage() {
               <div className="team-card">
                 <strong>Combined Mode</strong>
                 <span>Unified inference output for risk fusion and decision support.</span>
+              </div>
+              <div className="team-card">
+                <strong>V2X Simulation Mode</strong>
+                <span>Closed-loop ESP-NOW broadcast and RSU receiver telemetry ingestion with Leaflet map overlays.</span>
               </div>
             </div>
           </BorderGlow>

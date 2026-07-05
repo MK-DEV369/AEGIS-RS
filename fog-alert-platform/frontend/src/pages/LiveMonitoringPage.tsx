@@ -55,7 +55,7 @@ export function LiveMonitoringPage() {
   const [potholeData, setPotholeData] = useState<PotholeData>({})
   const [fogData, setFogData] = useState<FogData>({})
   const maxRisk = potholeData.max_risk ?? 0
-  const [cameraUrl, setCameraUrl] = useState('http://192.168.1.21:6969')
+  const [cameraUrl, setCameraUrl] = useState('0')
   const [isPolling, setIsPolling] = useState(false)
   const withBase = (path: string) => {
     const base = apiBase.replace(/\/$/, '')
@@ -351,13 +351,13 @@ export function LiveMonitoringPage() {
       <BorderGlow className="panel glass mb-6" style={{ marginBottom: '20px', padding: '20px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', alignItems: 'end' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="camera-url" style={{ fontWeight: 'bold', fontSize: '0.95em' }}>Camera URL</label>
+            <label htmlFor="camera-url" style={{ fontWeight: 'bold', fontSize: '0.95em' }}>Camera URL or Webcam Index</label>
             <input
               id="camera-url"
               className="phone-input"
               value={cameraUrl}
               onChange={(event) => setCameraUrl(event.target.value)}
-              placeholder="http://192.168.1.21:6969"
+              placeholder="0 (for iVCam)"
             />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
