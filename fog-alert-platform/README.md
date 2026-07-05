@@ -106,10 +106,10 @@ The backend tracks potholes across frames by centroid similarity. It only increm
 *   **Fog Alert**: `FOG:<fog_level>,<lat>,<lng>,<risk_score>,<source_id>\n`
 *   **Fog Clear**: `FOG:NONE,<lat>,<lng>,0,<source_id>\n`
 
-### 3. RSU and OBU 2 Output Logs
-When roadside receivers detect the ESP-NOW broadcasts, they log formatted JSON metrics to their debug consoles. Secondary vehicle OBUs (OBU 2) also receive these broadcasts and output OBU-specific logs:
-*   **RSU (Infrastructure)**: `{"type":"RSU_Pothole","lat":12.924285,"lng":77.499673,"vehicle_id":"RSU-01","speed":35,"status":"DISSEMINATED"};`
-*   **OBU 2 (Secondary Vehicle)**: `{"type":"OBU_Pothole","lat":12.924285,"lng":77.499673,"vehicle_id":"OBU-02","speed":30,"status":"RECEIVED"};`
+### 3. Road Side Unit (RSU) Output Logs
+When roadside receivers detect the ESP-NOW broadcasts, they log formatted JSON metrics to their debug consoles for easy ingestion by local nodes:
+*   **Pothole**: `{"type":"RSU_Pothole","lat":12.924285,"lng":77.499673,"vehicle_id":"OBU-01","speed":35,"status":"DISSEMINATED"};`
+*   **Fog**: `{"type":"RSU_Fog","lat":12.924285,"lng":77.499673,"vehicle_id":"OBU-01","speed":35,"status":"DISSEMINATED"};`
 
 ---
 
@@ -148,13 +148,13 @@ npm run dev
 The React monitoring panel will launch at `http://localhost:5173/`.
 
 #### 3. ESP32 Serial Relay
-With OBU 1 (Transmitter), RSU (Infrastructure), and OBU 2 (Receiver) ESP32 devices connected to your laptop:
+With both the Vehicle OBU and RSU ESP32 devices connected to your laptop:
 ```powershell
 # Activate backend venv first:
 cd backend
 python -u scripts/esp32_relay.py
 ```
-This automatically binds to all active USB serial COM ports (e.g. `COM4`, `COM5`, and `COM6`) at baud rate `115200`. It will dynamically classify COM port roles, relay outbound warnings only to the transmitter, and automatically listen for inbound JSON logs from both the RSU and OBU 2 receiver to post them to the backend telemetry database.
+This automatically binds to all active USB serial COM ports (e.g. `COM4` and `COM5`) at baud rate `115200`. It will relay outbound telemetry to the transmitter, and automatically listen for inbound JSON logs from the receiver to post them back to the backend telemetry database.
 
 ---
 
@@ -163,12 +163,10 @@ This automatically binds to all active USB serial COM ports (e.g. `COM4`, `COM5`
 The platform supports a closed-loop manual simulator to test your transceivers without camera feeds:
 
 1.  **Frontend trigger**: Open `/live-map` and trigger a simulated warning from the **OBU V2X Simulator** panel.
-2.  **Relay transmission**: The python relay detects the new status on the Django API and writes a serial stream (e.g. `POTHOLE:MEDIUM,12.924285,77.499673,1,OBU-01`) only to the transmitter OBU.
+2.  **Relay transmission**: The python relay detects the new status on the Django API and writes a serial stream (e.g. `POTHOLE:MEDIUM,12.924285,77.499673,1,OBU-01`) to the transmitter OBU.
 3.  **ESP-NOW Broadcast**: The transmitter OBU broadcasts the packed binary struct wirelessly.
 4.  **RSU Capture**: The roadside RSU receiver receives the packet and logs the formatted string to its serial port:
-    `{"type":"RSU_Pothole","lat":12.924285,"lng":77.499673,"vehicle_id":"RSU-01","speed":35,"status":"DISSEMINATED"};`
-5.  **Vehicle 2 Capture**: The OBU 2 receiver receives the broadcast and logs:
-    `{"type":"OBU_Pothole","lat":12.924285,"lng":77.499673,"vehicle_id":"OBU-02","speed":30,"status":"RECEIVED"};`
-6.  **Relay Ingest**: The relay daemon (dynamically classifying the COM ports) intercepts both JSON logs, parses them, and POSTs them to `/api/telemetry/ingest/`.
-7.  **Real-Time Mapping**: The map component polls `/api/telemetry/latest/` and displays a dashed violet marker for RSU dissemination and a dashed amber marker for OBU 2 reception, illustrating complete V2I2V alert delivery.
+    `{"type":"RSU_Pothole","lat":12.924285,"lng":77.499673,"vehicle_id":"OBU-01","speed":35,"status":"DISSEMINATED"};`
+5.  **Relay Ingest**: The relay daemon intercepts this JSON on the RSU serial port, parses it, and POSTs it back to `/api/telemetry/ingest/`.
+6.  **Real-Time Mapping**: The map component polls `/api/telemetry/latest/` and displays a dashed violet/blue double-ringed warning marker showing successful wireless delivery.
 
