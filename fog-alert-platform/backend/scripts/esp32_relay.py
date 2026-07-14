@@ -115,12 +115,11 @@ def main():
                     if line:
                         print(f"[{port} ESP32] {line}")
                         # Check if line is from RSU/OBU Receiver and formatted as JSON
-                        # Expected: {"type":"RSU_Pothole" or "OBU_Pothole", "lat":..., "lng":...};
                         if line.startswith('{"type":') and line.endswith('};'):
                             json_str = line.rstrip(';').strip()
                             try:
                                 data = json.loads(json_str)
-                                event_type = data.get("type", "RSU_Pothole")
+                                event_type = data.get("type", "RSU_ALERT")
                                 lat = float(data.get("lat", 0.0))
                                 lng = float(data.get("lng", 0.0))
                                 
@@ -129,22 +128,33 @@ def main():
                                     if port_roles.get(port) != 'RSU':
                                         port_roles[port] = 'RSU'
                                         print(f"[*] Port {port} dynamically classified as RSU Receiver.")
-                                    dynamic_source = f"RSU_{event_type}_{lat:.6f}_{lng:.6f}"
+                                    dynamic_source = data.get("vehicle_id", "OBU_001")
                                     payload_status = data.get("status", "DISSEMINATED")
-                                    speed = float(data.get("speed", 35.0))
+                                    speed = float(data.get("speed", 0.0))
                                 elif event_type.startswith("OBU_"):
                                     if port_roles.get(port) != 'OBU_RECEIVER':
                                         port_roles[port] = 'OBU_RECEIVER'
                                         print(f"[*] Port {port} dynamically classified as OBU Receiver.")
-                                    dynamic_source = f"OBU2_{event_type}_{lat:.6f}_{lng:.6f}"
+                                    dynamic_source = data.get("vehicle_id", "OBU_002")
                                     payload_status = data.get("status", "RECEIVED")
-                                    speed = float(data.get("speed", 30.0))
+                                    speed = float(data.get("speed", 0.0))
                                 else:
-                                    dynamic_source = f"UNK_{event_type}_{lat:.6f}_{lng:.6f}"
-                                    payload_status = data.get("status", "UNKNOWN")
+                                    dynamic_source = "esp32_unknown"
+                                    payload_status = "UNKNOWN"
                                     speed = 0.0
-                                    
-                                print(f"[+] Parsed alert from {port} ({port_roles[port]}): {data}")
+                                
+                                # Create standard output format requested by user
+                                formatted_alert = {
+                                    "type": event_type,
+                                    "vehicle_id": dynamic_source,
+                                    "lat": lat,
+                                    "lng": lng,
+                                    "severity": data.get("severity", "low"),
+                                    "speed": int(speed),
+                                    "depth_cm": float(data.get("depth_cm", 3.0)),
+                                    "status": payload_status
+                                }
+                                print(f"[+] Parsed alert: {json.dumps(formatted_alert)}")
                                 
                                 # POST to telemetry ingest endpoint
                                 ingest_url = f"{base_url}/api/telemetry/ingest/"
@@ -202,10 +212,41 @@ def main():
                             # Build protocol message: POTHOLE:severity,lat,lng,count,source
                             msg = f"POTHOLE:{severity},{lat:.6f},{lng:.6f},{pothole_count},{source_id}\n"
                             
-                            print(f"\n[EVENT] Pothole detected in frame! count={pothole_count} severity={severity}")
+                            # Map severity to depth
+                            sev_lower = severity.lower()
+                            depth = 3.0
+                            if sev_lower == "high":
+                                depth = 5.0
+                            elif sev_lower == "critical":
+                                depth = 8.0
+                            elif sev_lower == "medium":
+                                depth = 3.0
+                            else:
+                                depth = 1.0
+
+                            # Standardize source_id
+                            std_source_id = "OBU_001"
+                            if source_id.startswith("phone_") or source_id.startswith("OBU"):
+                                std_source_id = "OBU_001"
+                            else:
+                                std_source_id = source_id
+
+                            # Format strictly as RSU_ALERT JSON for console display
+                            formatted_alert = {
+                                "type": "RSU_ALERT",
+                                "vehicle_id": std_source_id,
+                                "lat": lat,
+                                "lng": lng,
+                                "severity": sev_lower,
+                                "speed": 0,
+                                "depth_cm": depth,
+                                "status": "DISSEMINATED"
+                            }
+                            print(f"\n[EVENT] Pothole detected in frame!")
+                            print(json.dumps(formatted_alert))
                             
                             if not open_connections:
-                                print(f"[!] No ESP32 COM ports connected. Output: {msg.strip()}")
+                                print(f"[!] No ESP32 COM ports connected. Serial Command: {msg.strip()}")
                             else:
                                 for port, ser in open_connections.items():
                                     if port_roles.get(port, 'TRANSMITTER') != 'TRANSMITTER':
@@ -244,6 +285,10 @@ def main():
                         coords = latest_fog.get("coordinates") or {}
                         lat = float(coords.get("lat") or 0.0)
                         lng = float(coords.get("lng") or 0.0)
+                        
+                        # Print diagnostic log for every parsed fog frame
+                        visibility = float(latest_fog.get("visibility_meters") or 0.0)
+                        print(f"[EVENT] Parsed fog status: level={fog_level} risk={risk_score:.3f} visibility={visibility:.1f}m")
                         
                         warning_levels = ["MEDIUM", "HIGH", "CRITICAL"]
                         

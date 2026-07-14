@@ -4,6 +4,7 @@ import BorderGlow from '@/components/BorderGlow'
 import ShinyText from '@/components/ShinyText'
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { ExportReportButton } from '@/components/ExportReportButton'
 
 function AreaChart({ data, color, gradientId }: { data: number[], color: string, gradientId: string }) {
   const width = 500
@@ -241,6 +242,24 @@ export function DashboardPage() {
 
   return (
     <div className="page">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+        <ExportReportButton
+          apiBase={apiBase}
+          liveData={{
+            fogLevel:        latestFog?.fog_level,
+            fogProbability:  latestFog?.fog_probability  != null ? Number(latestFog.fog_probability)  : undefined,
+            fogSmoothed:     latestFog?.fog_probability_smoothed != null ? Number(latestFog.fog_probability_smoothed) : undefined,
+            fogVisibility:   latestFog?.visibility_meters != null ? Number(latestFog.visibility_meters) : undefined,
+            fogContrast:     latestFog?.contrast          != null ? Number(latestFog.contrast)          : undefined,
+            fogRiskScore:    latestFog?.risk_score        != null ? Number(latestFog.risk_score)        : undefined,
+            maxRisk:         latestPothole?.pothole_metrics?.max_risk      != null ? Number(latestPothole.pothole_metrics.max_risk)      : undefined,
+            criticalCount:   latestPothole?.pothole_metrics?.critical_count != null ? Number(latestPothole.pothole_metrics.critical_count) : undefined,
+            highCount:       latestPothole?.pothole_metrics?.high_count    != null ? Number(latestPothole.pothole_metrics.high_count)    : undefined,
+            totalPotholes:   latestPothole?.total_potholes != null ? Number(latestPothole.total_potholes) : undefined,
+            potholeCount:    latestPothole?.pothole_count  != null ? Number(latestPothole.pothole_count)  : undefined,
+          }}
+        />
+      </div>
       <section className="kpi-grid">
         {kpis.map((kpi, index) => (
           <motion.article

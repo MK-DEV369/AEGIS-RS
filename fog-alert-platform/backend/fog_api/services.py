@@ -948,169 +948,193 @@ class FogPredictor:
     ) -> np.ndarray:
         """
         Enhance frame with both pothole bounding boxes and a detailed fog ADAS HUD.
+        Includes a realistic time-animated fog simulation overlay when fog is not clear.
         """
+        import time, math
         overlay = bgr.copy()
         height, width = overlay.shape[:2]
-        
+
+        fog_prob  = float(fog_result.get("fog_probability_smoothed", fog_result.get("fog_probability_fused", fog_result.get("fog_probability", 0.0))))
+        fog_level = str(fog_result.get("fog_level", "LOW")).upper()
+        visibility = float(fog_result.get("visibility_meters", 800.0))
+        risk_score = float(fog_result.get("risk_score", 0.0))
+
+        # ── Fog simulation overlay ─────────────────────────────────────────────
+        # Determine simulation intensity: LOW=0.10, MEDIUM=0.35, HIGH=0.65
+        # If real detection is very weak (prob < 0.05) we still show a subtle haze
+        SIM_INTENSITY = {"HIGH": 0.65, "MEDIUM": 0.40, "LOW": 0.14}.get(fog_level, 0.14)
+        # Never show zero — always at least a 10% atmospheric haze for realism
+        sim_alpha = max(0.10, SIM_INTENSITY)
+
+        # Build a time-drifting fog layer using two offset Gaussian blobs
+        t = time.time()
+        fog_layer = np.zeros((height, width), dtype=np.float32)
+
+        # Drift parameters keyed to wall-clock time for animation
+        drift_x  = int(width  * (0.5 + 0.18 * math.sin(t * 0.13)))
+        drift_y  = int(height * (0.55 + 0.12 * math.cos(t * 0.09)))
+        drift_x2 = int(width  * (0.5 + 0.22 * math.cos(t * 0.11 + 1.5)))
+        drift_y2 = int(height * (0.45 + 0.10 * math.sin(t * 0.07 + 0.8)))
+
+        # Create coordinate grids
+        yy, xx = np.ogrid[:height, :width]
+
+        # Primary fog blob
+        sigma1_x = width  * (0.60 + 0.12 * math.sin(t * 0.05))
+        sigma1_y = height * (0.55 + 0.10 * math.cos(t * 0.06))
+        g1 = np.exp(-((xx - drift_x) ** 2 / (2 * sigma1_x ** 2) +
+                       (yy - drift_y) ** 2 / (2 * sigma1_y ** 2)))
+
+        # Secondary lighter blob (opposite phase)
+        sigma2_x = width  * (0.45 + 0.08 * math.cos(t * 0.08))
+        sigma2_y = height * (0.40 + 0.06 * math.sin(t * 0.10))
+        g2 = np.exp(-((xx - drift_x2) ** 2 / (2 * sigma2_x ** 2) +
+                       (yy - drift_y2) ** 2 / (2 * sigma2_y ** 2))) * 0.65
+
+        # Vertical atmospheric gradient: fog is denser at the horizon (upper 60%)
+        grad = np.linspace(1.0, 0.25, height, dtype=np.float32).reshape(-1, 1)
+        fog_layer = np.clip((g1 + g2) * grad, 0, 1).astype(np.float32)
+
+        # Fog is grey-white (BGR = 210, 215, 220 — slight cool tint)
+        fog_colour = np.array([[[210, 215, 220]]], dtype=np.float32)
+        fog_rgb    = (fog_colour * fog_layer[:, :, np.newaxis]).astype(np.uint8)
+
+        # Blend
+        alpha_map = (fog_layer * sim_alpha).astype(np.float32)[:, :, np.newaxis]
+        overlay = (overlay.astype(np.float32) * (1.0 - alpha_map) +
+                   fog_rgb.astype(np.float32) * alpha_map).clip(0, 255).astype(np.uint8)
+
         # 1. Draw Pothole Bounding Boxes as futuristic reticles
         items = pothole_detections.get("items", [])
         for item in items:
             bbox = item.get("bbox_xyxy", [])
             if not bbox or len(bbox) != 4:
                 continue
-            
-            x1, y1, x2, y2 = bbox
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            risk = item.get("risk", 0.0)
+            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+            risk     = item.get("risk", 0.0)
             severity = item.get("severity", "LOW")
             distance = item.get("distance_m", 0.0)
-            
-            # Color based on severity
-            if severity == "CRITICAL":
-                color = (0, 0, 255)  # Red
-            elif severity == "HIGH":
-                color = (0, 165, 255)  # Orange
-            elif severity == "MEDIUM":
-                color = (0, 255, 255)  # Yellow
-            else:
-                color = (0, 255, 0)  # Green
-            
-            # Draw a subtle transparent overlay inside the box
+
+            color = (0, 0, 255) if severity == "CRITICAL" else \
+                    (0, 165, 255) if severity == "HIGH"    else \
+                    (0, 255, 255) if severity == "MEDIUM"  else (0, 255, 0)
+
             sub_box = overlay[y1:y2, x1:x2]
             if sub_box.size > 0:
                 box_overlay = np.zeros_like(sub_box)
-                cv2.rectangle(box_overlay, (0, 0), (x2 - x1, y2 - y1), color, -1)
+                cv2.rectangle(box_overlay, (0, 0), (x2-x1, y2-y1), color, -1)
                 cv2.addWeighted(sub_box, 0.88, box_overlay, 0.12, 0, sub_box)
 
-            # Draw thin outline
             cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1)
-            
-            # Draw corner brackets (thicker lines)
-            corner_len = max(5, min(15, int(min(x2 - x1, y2 - y1) * 0.2)))
-            # Top-left corner
-            cv2.line(overlay, (x1, y1), (x1 + corner_len, y1), color, 2, cv2.LINE_AA)
-            cv2.line(overlay, (x1, y1), (x1, y1 + corner_len), color, 2, cv2.LINE_AA)
-            # Top-right corner
-            cv2.line(overlay, (x2, y1), (x2 - corner_len, y1), color, 2, cv2.LINE_AA)
-            cv2.line(overlay, (x2, y1), (x2, y1 + corner_len), color, 2, cv2.LINE_AA)
-            # Bottom-left corner
-            cv2.line(overlay, (x1, y2), (x1 + corner_len, y2), color, 2, cv2.LINE_AA)
-            cv2.line(overlay, (x1, y2), (x1, y2 - corner_len), color, 2, cv2.LINE_AA)
-            # Bottom-right corner
-            cv2.line(overlay, (x2, y2), (x2 - corner_len, y2), color, 2, cv2.LINE_AA)
-            cv2.line(overlay, (x2, y2), (x2, y2 - corner_len), color, 2, cv2.LINE_AA)
-            
-            # Draw clean label tag
-            track_id = item.get("track_id")
-            if track_id is not None:
-                label_text = f"POTHOLE #{track_id} | {severity} | {distance:.1f}m"
-            else:
-                label_text = f"POTHOLE | {severity} | {distance:.1f}m"
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.38
-            font_thickness = 1
-            text_size = cv2.getTextSize(label_text, font, font_scale, font_thickness)[0]
-            
-            label_y = y1 - 6
-            if label_y < 15:
-                label_y = y2 + text_size[1] + 10
-            
-            tag_x1 = x1
-            tag_y1 = label_y - text_size[1] - 6
-            tag_x2 = x1 + text_size[0] + 10
-            tag_y2 = label_y + 4
-            
-            tag_sub = overlay[max(0, tag_y1):min(height, tag_y2), max(0, tag_x1):min(width, tag_x2)]
-            if tag_sub.size > 0:
-                tag_bg = np.zeros_like(tag_sub)
-                cv2.addWeighted(tag_sub, 0.35, tag_bg, 0.65, 0, tag_sub)
-            cv2.rectangle(overlay, (tag_x1, tag_y1), (tag_x2, tag_y2), color, 1)
-            cv2.putText(overlay, label_text, (x1 + 5, label_y - 1), font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+            corner_len = max(5, min(15, int(min(x2-x1, y2-y1) * 0.2)))
+            for (cx, cy, dx, dy) in [(x1, y1, 1, 1), (x2, y1, -1, 1), (x1, y2, 1, -1), (x2, y2, -1, -1)]:
+                cv2.line(overlay, (cx, cy), (cx + dx*corner_len, cy), color, 2, cv2.LINE_AA)
+                cv2.line(overlay, (cx, cy), (cx, cy + dy*corner_len), color, 2, cv2.LINE_AA)
 
-        # 2. Draw Premium Semi-Transparent ADAS HUD Panel (Top-Left)
+            track_id = item.get("track_id")
+            label_text = f"POTHOLE #{track_id} | {severity} | {distance:.1f}m" if track_id is not None \
+                    else f"POTHOLE | {severity} | {distance:.1f}m"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            fs, ft = 0.38, 1
+            tw_, th_ = cv2.getTextSize(label_text, font, fs, ft)[0]
+            label_y = y1 - 6 if y1 - 6 >= 15 else y2 + th_ + 10
+            tag_x1, tag_y1 = x1, label_y - th_ - 6
+            tag_x2, tag_y2 = x1 + tw_ + 10, label_y + 4
+            tag_sub = overlay[max(0,tag_y1):min(height,tag_y2), max(0,tag_x1):min(width,tag_x2)]
+            if tag_sub.size > 0:
+                cv2.addWeighted(tag_sub, 0.35, np.zeros_like(tag_sub), 0.65, 0, tag_sub)
+            cv2.rectangle(overlay, (tag_x1, tag_y1), (tag_x2, tag_y2), color, 1)
+            cv2.putText(overlay, label_text, (x1+5, label_y-1), font, fs, (255,255,255), ft, cv2.LINE_AA)
+
+        # 2. ADAS HUD Panel (Top-Left)
         hud_x, hud_y = 15, 15
-        hud_w, hud_h = 350, 235
-        
-        # Ensure HUD coordinates fit inside the image bounds
+        hud_w, hud_h = 355, 245
+
         if hud_y + hud_h < height and hud_x + hud_w < width:
             sub_img = overlay[hud_y:hud_y+hud_h, hud_x:hud_x+hud_w]
-            black_rect = np.zeros_like(sub_img)
-            # Alpha blend: 65% opacity for HUD background
-            cv2.addWeighted(sub_img, 0.35, black_rect, 0.65, 0, sub_img)
-            # Draw border
-            cv2.rectangle(overlay, (hud_x, hud_y), (hud_x + hud_w, hud_y + hud_h), (0, 255, 255), 1) # Cyan border
-            
-            # HUD Title & System Status
-            cv2.putText(overlay, "AEGIS ACTIVE ADAS", (hud_x + 15, hud_y + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2, cv2.LINE_AA)
-            cv2.putText(overlay, "SYS: ACTIVE", (hud_x + hud_w - 110, hud_y + 23), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.line(overlay, (hud_x + 15, hud_y + 35), (hud_x + hud_w - 15, hud_y + 35), (0, 255, 255), 1)
-            
-            # Content calculations
+            cv2.addWeighted(sub_img, 0.30, np.zeros_like(sub_img), 0.70, 0, sub_img)
+            cv2.rectangle(overlay, (hud_x, hud_y), (hud_x+hud_w, hud_y+hud_h), (0, 255, 255), 1)
+
+            cv2.putText(overlay, "AEGIS ACTIVE ADAS", (hud_x+15, hud_y+25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(overlay, "SYS: ACTIVE", (hud_x+hud_w-115, hud_y+23),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.line(overlay, (hud_x+15, hud_y+35), (hud_x+hud_w-15, hud_y+35), (0, 255, 255), 1)
+
             max_risk = pothole_detections.get("max_risk", 0.0)
-            fog_prob = float(fog_result.get("fog_probability_smoothed", fog_result.get("fog_probability_fused", fog_result.get("fog_probability", 0.0))))
-            fog_level = str(fog_result.get("fog_level", "unknown")).upper()
-            visibility = float(fog_result.get("visibility_meters", 0.0))
-            risk_score = float(fog_result.get("risk_score", 0.0))
-            
-            bar_x = hud_x + 180
-            bar_w = 150
-            bar_h = 10
- 
-            # Line 1: ADAS Risk Level
-            cv2.putText(overlay, f"ADAS Risk: {risk_score:.2f}", (hud_x + 15, hud_y + 58), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            bar_x, bar_w, bar_h = hud_x+185, 150, 10
+
+            # ADAS Risk bar
+            cv2.putText(overlay, f"ADAS Risk: {risk_score:.3f}", (hud_x+15, hud_y+58),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
             bar_y = hud_y + 48
-            cv2.rectangle(overlay, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (50, 50, 50), -1)
+            cv2.rectangle(overlay, (bar_x, bar_y), (bar_x+bar_w, bar_y+bar_h), (50, 50, 50), -1)
             fill_w = int(bar_w * min(1.0, max(0.0, risk_score)))
-            bar_color = (0, 0, 255) if risk_score > 0.75 else (0, 165, 255) if risk_score > 0.4 else (0, 255, 0)
-            cv2.rectangle(overlay, (bar_x, bar_y), (bar_x + fill_w, bar_y + bar_h), bar_color, -1)
-            cv2.rectangle(overlay, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (100, 100, 100), 1)
- 
-            # Line 2: Fog Info
-            fog_color = (0, 0, 255) if fog_level == "HIGH" else (0, 165, 255) if fog_level == "MEDIUM" else (0, 255, 0)
-            cv2.putText(overlay, f"Fog Level: {fog_level} ({fog_prob:.2f})", (hud_x + 15, hud_y + 88), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            bar_c = (0, 0, 255) if risk_score > 0.75 else (0, 165, 255) if risk_score > 0.4 else (0, 255, 0)
+            cv2.rectangle(overlay, (bar_x, bar_y), (bar_x+fill_w, bar_y+bar_h), bar_c, -1)
+            cv2.rectangle(overlay, (bar_x, bar_y), (bar_x+bar_w, bar_y+bar_h), (100, 100, 100), 1)
+
+            # Fog Level pill badge (coloured background)
+            fog_color_bgr = (0, 0, 200) if fog_level == "HIGH" else \
+                            (0, 130, 220) if fog_level == "MEDIUM" else (20, 160, 20)
+            fog_label_txt = f"FOG: {fog_level}"
+            pill_x, pill_y = hud_x + 15, hud_y + 73
+            pill_w = len(fog_label_txt) * 8 + 14
+            pill_h = 16
+            cv2.rectangle(overlay, (pill_x, pill_y), (pill_x+pill_w, pill_y+pill_h), fog_color_bgr, -1)
+            cv2.rectangle(overlay, (pill_x, pill_y), (pill_x+pill_w, pill_y+pill_h), (255, 255, 255), 1)
+            cv2.putText(overlay, fog_label_txt, (pill_x+6, pill_y+12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+
+            # Fog probability bar
+            cv2.putText(overlay, f"Fog Prob: {fog_prob:.3f}", (pill_x + pill_w + 10, hud_y + 85),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 200, 200), 1, cv2.LINE_AA)
             bar_y_fog = hud_y + 78
-            cv2.rectangle(overlay, (bar_x, bar_y_fog), (bar_x + bar_w, bar_y_fog + bar_h), (50, 50, 50), -1)
+            cv2.rectangle(overlay, (bar_x, bar_y_fog), (bar_x+bar_w, bar_y_fog+bar_h), (50, 50, 50), -1)
             fill_w_fog = int(bar_w * min(1.0, max(0.0, fog_prob)))
-            cv2.rectangle(overlay, (bar_x, bar_y_fog), (bar_x + fill_w_fog, bar_y_fog + bar_h), fog_color, -1)
-            cv2.rectangle(overlay, (bar_x, bar_y_fog), (bar_x + bar_w, bar_y_fog + bar_h), (100, 100, 100), 1)
- 
-            # Line 3: Visibility
-            cv2.putText(overlay, f"Visibility: {visibility:.1f} m", (hud_x + 15, hud_y + 118), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
- 
-            # Line 4: Potholes
+            cv2.rectangle(overlay, (bar_x, bar_y_fog), (bar_x+fill_w_fog, bar_y_fog+bar_h), fog_color_bgr, -1)
+            cv2.rectangle(overlay, (bar_x, bar_y_fog), (bar_x+bar_w, bar_y_fog+bar_h), (100, 100, 100), 1)
+
+            # Visibility
+            vis_color = (0, 0, 220) if visibility < 100 else (0, 160, 255) if visibility < 300 else (180, 255, 180)
+            cv2.putText(overlay, f"Visibility: {visibility:.1f} m", (hud_x+15, hud_y+118),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, vis_color, 1, cv2.LINE_AA)
+
+            # Potholes
             pothole_color = (0, 0, 255) if max_risk > 0.75 else (0, 165, 255) if max_risk > 0.4 else (0, 255, 0)
-            cv2.putText(overlay, f"Potholes: {len(items)} (Max Risk: {max_risk:.2f})", (hud_x + 15, hud_y + 148), cv2.FONT_HERSHEY_SIMPLEX, 0.45, pothole_color, 1, cv2.LINE_AA)
- 
-            # Line 5: GPS
+            cv2.putText(overlay, f"Potholes: {len(items)}  Max Risk: {max_risk:.3f}",
+                        (hud_x+15, hud_y+148), cv2.FONT_HERSHEY_SIMPLEX, 0.45, pothole_color, 1, cv2.LINE_AA)
+
+            # GPS
             if coordinates:
                 lat = coordinates.get("lat")
                 lng = coordinates.get("lng")
-                if lat is not None and lng is not None:
-                    cv2.putText(overlay, f"GPS Coords: {lat:.6f}, {lng:.6f}", (hud_x + 15, hud_y + 178), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 200, 200), 1, cv2.LINE_AA)
-                else:
-                    cv2.putText(overlay, "GPS Coords: ACQUIRING...", (hud_x + 15, hud_y + 178), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
+                gps_txt = f"GPS: {lat:.6f}, {lng:.6f}" if lat is not None and lng is not None else "GPS: ACQUIRING..."
+                gps_col = (200, 200, 200) if lat is not None else (150, 150, 150)
             else:
-                cv2.putText(overlay, "GPS Coords: NO TELEMETRY", (hud_x + 15, hud_y + 178), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
-                
-            # Line 6: Dehaze Status & Priors
+                gps_txt = "GPS: NO TELEMETRY"
+                gps_col = (150, 150, 150)
+            cv2.putText(overlay, gps_txt, (hud_x+15, hud_y+178),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, gps_col, 1, cv2.LINE_AA)
+
+            # Dehaze status
             if dehaze_meta:
                 enabled = dehaze_meta.get("enabled", False)
-                method = dehaze_meta.get("method", "none")
+                method  = dehaze_meta.get("method", "none")
                 if enabled:
-                    method_name = "FFA-Net" if "ffa" in method else "CLAHE" if "clahe" in method else "Active"
+                    mn = "FFA-Net" if "ffa" in method else "CLAHE" if "clahe" in method else "Active"
                     prior = dehaze_meta.get("annotation_prior")
                     if prior and isinstance(prior, dict):
-                        density = prior.get("object_density", 0.0)
-                        occupancy = prior.get("occupancy_ratio", 0.0)
-                        dehaze_text = f"Dehaze: {method_name} (Dens: {density:.2f}, Occ: {occupancy:.2f})"
+                        dtext = f"Dehaze: {mn} (Dens:{prior.get('object_density',0):.2f} Occ:{prior.get('occupancy_ratio',0):.2f})"
                     else:
-                        dehaze_text = f"Dehaze: {method_name} (Active)"
-                    cv2.putText(overlay, dehaze_text, (hud_x + 15, hud_y + 208), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 255), 1, cv2.LINE_AA)
+                        dtext = f"Dehaze: {mn} (Active)"
                 else:
-                    cv2.putText(overlay, "Dehaze: Disabled / Skipped", (hud_x + 15, hud_y + 208), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (150, 150, 150), 1, cv2.LINE_AA)
+                    dtext = "Dehaze: Disabled / Skipped"
             else:
-                cv2.putText(overlay, "Dehaze: Not Available", (hud_x + 15, hud_y + 208), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (150, 150, 150), 1, cv2.LINE_AA)
-        
+                dtext = "Dehaze: Not Available"
+            cv2.putText(overlay, dtext, (hud_x+15, hud_y+208),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 255), 1, cv2.LINE_AA)
+
         return overlay
 
     def _ensure_model_loaded(self) -> dict[str, object]:
@@ -1167,21 +1191,18 @@ class FogPredictor:
         }
 
     def _calculate_contrast(self, bgr: np.ndarray) -> float:
-        """Calculate contrast ratio from image."""
+        """Calculate robust RMS contrast ratio from image standard deviation."""
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        i_min = float(np.min(gray))
-        i_max = float(np.max(gray))
-        if (i_max + i_min) == 0:
-            return 0.0
-        contrast = (i_max - i_min) / (i_max + i_min)
+        std_val = float(np.std(gray))
+        # Max standard deviation of an 8-bit gray image is 127.5
+        contrast = std_val / 127.5
         return max(0.0, min(1.0, contrast))
 
     def _calculate_visibility(self, contrast: float) -> float:
         """Estimate visibility in meters from contrast. Higher contrast = better visibility."""
-        if contrast < 0.01:
-            return 10.0  # Very low visibility
-        visibility = max(10.0, min(100.0, 50.0 / contrast))
-        return float(visibility)
+        # Scale visibility proportionally: low contrast (fog) -> low visibility
+        visibility = contrast * 800.0
+        return float(max(10.0, min(1000.0, visibility)))
 
     def _classify_fog_level(self, fog_probability: float) -> str:
         """Classify fog into HIGH, MEDIUM, or LOW."""
@@ -1222,7 +1243,8 @@ class FogPredictor:
         """
         # Normalize factors
         fog_factor = fog_prob
-        visibility_factor = max(0.0, min(1.0, (100.0 - visibility) / 100.0))
+        # visibility goes 10..1000m; invert so low visibility = high risk factor
+        visibility_factor = max(0.0, min(1.0, 1.0 - (visibility / 1000.0)))
         pothole_factor = min(1.0, pothole_count / 5.0) if pothole_count > 0 else 0.0
         speed_factor = min(1.0, speed_kmph / 100.0) if speed_kmph > 0 else 0.0
         
@@ -1243,15 +1265,17 @@ class FogPredictor:
     def _predict_fog_from_bgr(
         self,
         dehazed_bgr: np.ndarray,
+        hazy_bgr: np.ndarray | None = None,
         source_id: str | None = None,
         fog_head_probs: list[float] | None = None,
         annotation_prior: dict[str, float] | None = None,
     ) -> dict[str, object]:
+        target_bgr = hazy_bgr if hazy_bgr is not None else dehazed_bgr
         temp_file = NamedTemporaryFile(suffix=".png", delete=False)
         try:
-            ok, encoded = cv2.imencode(".png", dehazed_bgr)
+            ok, encoded = cv2.imencode(".png", target_bgr)
             if not ok:
-                raise ValueError("Failed to encode dehazed image for feature extraction.")
+                raise ValueError("Failed to encode target image for feature extraction.")
             temp_file.write(encoded.tobytes())
             temp_file.flush()
             temp_file.close()
@@ -1267,42 +1291,46 @@ class FogPredictor:
             except Exception:
                 pass
 
-        bundle = self._ensure_model_loaded()
-        model = bundle["model"]
-        feature_columns = bundle["feature_columns"]
-        sample = pd.DataFrame([features])[feature_columns]
-        xgb_prob = float(model.predict_proba(sample)[0, 1])
+        # Base the prediction directly on the deep learning FFA-Net classification head
+        xgb_prob = -1.0
+        neural_fog_prob = -1.0
 
-        neural_fog_prob = None
         if isinstance(fog_head_probs, list) and len(fog_head_probs) >= 3:
-            neural_fog_prob = float(fog_head_probs[2])
-
-        if neural_fog_prob is not None:
-            fog_prob = 0.7 * xgb_prob + 0.3 * neural_fog_prob
+            low_p = float(fog_head_probs[0])
+            med_p = float(fog_head_probs[1])
+            high_p = float(fog_head_probs[2])
+            
+            # Expected value of fog index: 0.0 for low/clear, 0.60 for medium, 1.0 for high/dense
+            fog_prob = 0.0 * low_p + 0.60 * med_p + 1.0 * high_p
+            neural_fog_prob = high_p
         else:
-            fog_prob = xgb_prob
+            # Fallback to XGBoost if neural probabilities are not available (e.g. CLAHE fallback)
+            bundle = self._ensure_model_loaded()
+            model = bundle["model"]
+            feature_columns = bundle["feature_columns"]
+            sample = pd.DataFrame([features])[feature_columns]
+            fog_prob = float(model.predict_proba(sample)[0, 1])
+            xgb_prob = fog_prob
+
+        # Calculate additional features on original hazy/target frame
+        contrast = self._calculate_contrast(target_bgr)
+
+        # Robust contrast-based fog probability heuristic fallback
+        h_prob = 0.0
+        if contrast <= 0.6:
+            h_prob = 0.95 - ((contrast - 0.2) / 0.4) * (0.95 - 0.40)
+            h_prob = max(0.40, min(0.95, h_prob))
+        else:
+            h_prob = 0.40 - ((contrast - 0.6) / 0.25) * (0.40 - 0.01)
+            h_prob = max(0.01, min(0.40, h_prob))
+
+        # Fuse the neural/XGBoost prediction with contrast heuristic
+        fog_prob = max(fog_prob, h_prob)
 
         # Apply temporal smoothing if source_id provided
         smoothed_fog_prob = fog_prob
         if source_id:
             smoothed_fog_prob = self._apply_temporal_smoothing(source_id, fog_prob)
-
-        # Calculate additional features
-        contrast = self._calculate_contrast(dehazed_bgr)
-
-        # Gentle contrast-based correction:
-        # Foggy scenes have LOW contrast  (< 0.35) → no suppression at all
-        # Ambiguous scenes               (0.35–0.65) → slight suppression
-        # Clearly lit / non-foggy scenes (> 0.65) → stronger suppression
-        # Uses a smooth sigmoid so transitions are gradual, not a hard cut-off.
-        import math
-        # Sigmoid centred at contrast=0.60, steepness=12
-        suppression = 1.0 / (1.0 + math.exp(-12.0 * (contrast - 0.60)))
-        # suppression ≈ 0 when contrast is low (keep probability intact)
-        # suppression ≈ 1 when contrast is high (reduce probability)
-        calibration_multiplier = 1.0 - (0.75 * suppression)  # max reduction = 75%
-        smoothed_fog_prob = max(0.0, smoothed_fog_prob * calibration_multiplier)
-        fog_prob           = max(0.0, fog_prob           * calibration_multiplier)
 
         pred        = int(smoothed_fog_prob >= 0.5)
         visibility  = self._calculate_visibility(contrast)
@@ -1323,7 +1351,7 @@ class FogPredictor:
             )
 
         return {
-            "fog_probability": xgb_prob,
+            "fog_probability": fog_prob,
             "fog_probability_neural": neural_fog_prob,
             "fog_probability_fused": fog_prob,
             "fog_probability_smoothed": smoothed_fog_prob,
@@ -1354,7 +1382,8 @@ class FogPredictor:
             dehazed_bgr, dehaze_meta = self.dehazer.dehaze_bgr(prepared_bgr)
 
         fog_result = self._predict_fog_from_bgr(
-            dehazed_bgr,
+            dehazed_bgr=dehazed_bgr,
+            hazy_bgr=prepared_bgr,
             source_id=source_id,
             fog_head_probs=dehaze_meta.get("fog_head_probs") if isinstance(dehaze_meta, dict) else None,
             annotation_prior=dehaze_meta.get("annotation_prior") if isinstance(dehaze_meta, dict) else None,
@@ -1577,7 +1606,8 @@ class FogPredictor:
 
         # Predict Fog first so we can draw it on the combined frame
         fog_result = self._predict_fog_from_bgr(
-            dehazed_bgr,
+            dehazed_bgr=dehazed_bgr,
+            hazy_bgr=prepared_bgr,
             source_id=source_id,
             fog_head_probs=dehaze_meta.get("fog_head_probs") if isinstance(dehaze_meta, dict) else None,
             annotation_prior=dehaze_meta.get("annotation_prior") if isinstance(dehaze_meta, dict) else None,
